@@ -201,6 +201,48 @@ async def test_grade_accepts_verbatim_quote_and_verify_rejects_extra_claims() ->
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("omitted", [None, 0, 1])
+async def test_distinct_quotes_from_one_chunk_are_retained_and_verified(
+    omitted: int | None,
+) -> None:
+    quotes = [QUOTE, "quasar rollback keeps the previous deployment available"]
+    state = _state(
+        hits=[_hit(". ".join(quotes))],
+        turn_hits=[_hit(". ".join(quotes))],
+    )
+    draft = "\n".join(f"{quote} [{CID}]" for index, quote in enumerate(quotes) if index != omitted)
+    listed = FakeListChatModel(
+        responses=[
+            json.dumps(
+                {
+                    "sufficient": True,
+                    "supporting": [
+                        {"chunk_id": CID, "quote": quote} for quote in [*quotes, *quotes]
+                    ],
+                }
+            ),
+            json.dumps({"answer": draft}),
+        ]
+    )
+    graded = await grade(state, listed)
+    assert graded["grade"] == "sufficient"
+    assert len(graded["supporting"]) == 2
+    assert {(item["chunk_id"], item["quote"]) for item in graded["supporting"]} == {
+        (CID, quote) for quote in quotes
+    }
+    drafted = await generate({**state, **graded}, listed)
+    checked = await verify({**state, **graded, **drafted})
+    assert checked["verified"] is (omitted is None)
+    if omitted is None:
+        assert checked["decision"] == "answer"
+        assert checked["answer"] == draft
+        assert checked["citations"] == [CID]
+    else:
+        assert checked["verify_reason"] == "ungrounded"
+        assert checked["citations"] == []
+
+
+@pytest.mark.asyncio
 async def test_plan_provider_error_resets_previous_turn_decisions(monkeypatch) -> None:
     monkeypatch.setattr(
         "aether.graph.nodes.chat_json", AsyncMock(side_effect=LLMUnavailable("llm_unavailable"))

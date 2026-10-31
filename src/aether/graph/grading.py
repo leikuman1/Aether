@@ -268,11 +268,12 @@ def accept_support(
         accepted.append({"chunk_id": chunk_id, "quote": quote, "overlap": overlap})
     accepted.sort(key=lambda item: (-item["overlap"], item["chunk_id"]))
     deduped = []
-    seen: set[str] = set()
+    seen: set[tuple[str, str]] = set()
     for item in accepted:
-        if item["chunk_id"] in seen:
+        key = (item["chunk_id"], item["quote"])
+        if key in seen:
             continue
-        seen.add(item["chunk_id"])
+        seen.add(key)
         deduped.append(item)
     return deduped
 

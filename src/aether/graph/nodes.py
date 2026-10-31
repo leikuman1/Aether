@@ -295,9 +295,10 @@ async def verify(state: AgentState) -> dict:
             "citations": [],
             "abstain_reason": "no_citation",
         }
-    accepted = {item["chunk_id"]: item["quote"] for item in state.get("supporting") or []}
-    quotes = [accepted[chunk_id] for chunk_id in cited if chunk_id in accepted]
-    if len(quotes) != len(cited) or not is_extractive(draft, quotes):
+    accepted = {(item["chunk_id"], item["quote"]) for item in state.get("supporting") or []}
+    supported_ids = {chunk_id for chunk_id, _ in accepted}
+    quotes = [quote for chunk_id, quote in accepted if chunk_id in cited]
+    if not set(cited) <= supported_ids or not is_extractive(draft, quotes):
         return {
             "verified": False,
             "verify_reason": "ungrounded",
