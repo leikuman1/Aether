@@ -26,6 +26,7 @@ from aether.graph.nodes import (
     rewrite,
     route_after_grade,
     route_after_plan,
+    route_after_review,
     route_after_verify,
     verify,
 )
@@ -204,6 +205,20 @@ async def test_plan_retrieve_grade_rewrite_are_independent() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("approved", [True, False, "false", "true", 1, 0, None, [], [True], {}])
+@pytest.mark.parametrize("mapping", [False, True])
+async def test_review_requires_boolean_true(monkeypatch, approved, mapping: bool) -> None:
+    decision = {"approved": approved} if mapping else approved
+    monkeypatch.setattr("aether.graph.nodes.interrupt", lambda _: decision)
+    checked = await review(_state(require_review=True))
+    assert checked["human_decision"] == ("approved" if approved is True else "rejected")
+    assert route_after_review(checked) == ("generate" if approved is True else "abstain")
+    if approved is not True:
+        rejected = await abstain({**_state(), **checked})
+        assert rejected["abstain_reason"] == "human_rejected"
+
+
+@pytest.mark.asyncio
 async def test_grade_accepts_verbatim_quote_and_verify_rejects_extra_claims() -> None:
     listed = FakeListChatModel(
         responses=[
@@ -317,6 +332,46 @@ async def test_verify_requires_accepted_quote_for_every_cited_id() -> None:
     assert checked["verified"] is False
     assert checked["verify_reason"] == "ungrounded"
     assert checked["citations"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("crossed", [False, True])
+@pytest.mark.parametrize("separator", ["\n", " "])
+@pytest.mark.parametrize("reverse", [False, True])
+async def test_verify_binds_quotes_to_their_own_citation_markers(
+    crossed: bool, separator: str, reverse: bool
+) -> None:
+    other_id = "abcdef0123456789abcd"
+    other_quote = "quasar rollback checks deployment health before switching traffic"
+    quotes = [QUOTE, other_quote]
+    ids = [other_id, CID] if crossed else [CID, other_id]
+    passages = [
+        f"{quote} [{chunk_id.upper()}]" for quote, chunk_id in zip(quotes, ids, strict=True)
+    ]
+    if reverse:
+        passages.reverse()
+    draft = separator.join(passages)
+    state = _state(
+        turn_hits=[_hit(), _hit(other_quote, other_id)],
+        supporting=[
+            {"chunk_id": CID, "quote": QUOTE},
+            {"chunk_id": other_id, "quote": other_quote},
+        ],
+        draft=draft,
+    )
+    checked = await verify(state)
+    assert checked["verified"] is (not crossed)
+    if crossed:
+        assert checked["verify_reason"] == "ungrounded"
+        assert checked["citations"] == []
+        assert "answer" not in checked
+        assert route_after_verify(checked) == "abstain"
+        rejected = await abstain({**state, **checked})
+        assert rejected["abstain_reason"] == "ungrounded"
+        assert rejected["answer"] == ABSTAIN_TEXT["ungrounded"]
+    else:
+        assert checked["answer"] == draft
+        assert checked["citations"] == extract_chunk_ids(draft)
 
 
 @pytest.mark.asyncio

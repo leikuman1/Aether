@@ -211,6 +211,38 @@ async def test_zero_budget_abstains_on_first_insufficient_grade(tmp_path) -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("budget", [-1, 9, 100])
+async def test_run_turn_rejects_out_of_range_rewrite_budget(tmp_path, budget: int) -> None:
+    limits = _limits(tmp_path, "invalid-budget")
+    limits["rewrite_budget"] = budget
+    model = CountingList(responses=["unused"])
+    searcher = _Searcher([])
+    with pytest.raises(ValueError, match="invalid agent limits"):
+        await run_turn(question=QUESTION, searcher=searcher, llm=model, **limits)
+    assert model.calls == 0
+    assert searcher.queries == []
+    assert not limits["checkpoint_path"].exists()
+
+
+@pytest.mark.asyncio
+async def test_max_rewrite_budget_exhausts_normally(tmp_path) -> None:
+    limits = _limits(tmp_path, "max-budget")
+    limits["rewrite_budget"] = 8
+    searcher = _Searcher([])
+    result = await run_turn(
+        question=QUESTION,
+        searcher=searcher,
+        llm=EvidenceBoundChatModel(min_support_terms=2),
+        **limits,
+    )
+    assert result["decision"] == "abstain"
+    assert result["abstain_reason"] == "budget_exhausted"
+    assert result["rewrite_count"] == 8
+    assert len(result["attempts"]) == 9
+    assert len(searcher.queries) == 9
+
+
+@pytest.mark.asyncio
 async def test_fabricated_citation_is_not_emitted(tmp_path) -> None:
     model = FakeListChatModel(
         responses=[

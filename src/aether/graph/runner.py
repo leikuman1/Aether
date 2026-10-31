@@ -82,7 +82,12 @@ async def run_turn(
     """执行一轮，或在同一 thread_id 上提交中断后的人工决定。"""
     if not thread_id.strip():
         raise ValueError("thread_id is required")
-    if rewrite_budget < 0 or min_support_terms < 1 or min_quote_chars < 1 or retrieval_k < 1:
+    if (
+        not 0 <= rewrite_budget <= 8
+        or min_support_terms < 1
+        or min_quote_chars < 1
+        or retrieval_k < 1
+    ):
         raise ValueError("invalid agent limits")
     path = Path(checkpoint_path).resolve()
     path.parent.mkdir(parents=True, exist_ok=True)

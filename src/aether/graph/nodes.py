@@ -6,7 +6,12 @@ from typing import Protocol
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.types import interrupt
 
-from aether.graph.citations import extract_chunk_ids, fabricated_citation_ids, is_extractive
+from aether.graph.citations import (
+    CHUNK_ID_RE,
+    extract_chunk_ids,
+    fabricated_citation_ids,
+    is_extractive,
+)
 from aether.graph.grading import accept_support, constrain_query
 from aether.graph.llm import LLMUnavailable, chat_json
 from aether.graph.state import AgentState, Hit
@@ -241,7 +246,7 @@ async def review(state: AgentState) -> dict:
             "grade": state.get("grade", ""),
         }
     )
-    approved = bool(decision.get("approved")) if isinstance(decision, Mapping) else bool(decision)
+    approved = (decision.get("approved") if isinstance(decision, Mapping) else decision) is True
     return {"human_decision": "approved" if approved else "rejected"}
 
 
@@ -298,7 +303,23 @@ async def verify(state: AgentState) -> dict:
     accepted = {(item["chunk_id"], item["quote"]) for item in state.get("supporting") or []}
     supported_ids = {chunk_id for chunk_id, _ in accepted}
     quotes = [quote for chunk_id, quote in accepted if chunk_id in cited]
-    if not set(cited) <= supported_ids or not is_extractive(draft, quotes):
+    bound = True
+    start = 0
+    body = draft.lower()
+    # 每段原文必须由紧随其后的引用支持，不能交叉借用其他引用的原文。
+    for marker in CHUNK_ID_RE.finditer(body):
+        passage = body[start : marker.end()]
+        normalized = " ".join(body[start : marker.start()].split())
+        local_quotes = [
+            quote
+            for chunk_id, quote in accepted
+            if chunk_id == marker.group(1) and " ".join(quote.lower().split()) in normalized
+        ]
+        if not is_extractive(passage, local_quotes):
+            bound = False
+            break
+        start = marker.end()
+    if not set(cited) <= supported_ids or not is_extractive(draft, quotes) or not bound:
         return {
             "verified": False,
             "verify_reason": "ungrounded",
