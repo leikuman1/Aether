@@ -8,7 +8,7 @@ from langchain_core.language_models.fake_chat_models import FakeChatModel, FakeL
 
 from aether.graph.citations import extract_chunk_ids, fabricated_citation_ids
 from aether.graph.llm import EvidenceBoundChatModel
-from aether.graph.runner import run_turn
+from aether.graph.runner import read_thread, run_turn
 from aether.retrieval.types import Chunk, RetrievedChunk
 
 CID = "0123456789abcdef0123"
@@ -91,6 +91,23 @@ async def test_fake_list_model_answers_only_with_real_citation(tmp_path) -> None
     assert result["rewrite_count"] == 0
     assert model.calls == 3
     assert result["messages"][-1]["decision"] == "answer"
+
+
+@pytest.mark.asyncio
+async def test_read_thread_rejects_unknown_id_in_existing_checkpoint(tmp_path) -> None:
+    limits = _limits(tmp_path, "known")
+    searcher = _Searcher([_retrieved()])
+    llm = EvidenceBoundChatModel(min_support_terms=2)
+    result = await run_turn(question=QUESTION, searcher=searcher, llm=llm, **limits)
+    read_args = {
+        "searcher": searcher,
+        "llm": llm,
+        "checkpoint_path": limits["checkpoint_path"],
+        "retrieval_k": limits["retrieval_k"],
+    }
+    assert await read_thread(thread_id="known", **read_args) == result
+    with pytest.raises(ValueError, match="unknown thread: missing"):
+        await read_thread(thread_id="missing", **read_args)
 
 
 @pytest.mark.asyncio

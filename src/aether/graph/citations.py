@@ -2,16 +2,16 @@
 
 import re
 
-# 本库 chunk id 是 sha256[:20]。更长的十六进制串也视为引用，避免只截断前 20 位后漏检。
-CHUNK_ID_RE = re.compile(r"(?<![0-9a-f])[0-9a-f]{20,}(?![0-9a-f])")
+# 本库 chunk id 是 sha256[:20]。仅识别方括号引用，保留完整 id 以检测更长的伪造引用。
+CHUNK_ID_RE = re.compile(r"\[([0-9a-f]{20,})\]")
 
 
 def extract_chunk_ids(text: str) -> list[str]:
-    """按出现顺序去重。连续十六进制长度不足 20 的词不算 chunk id。"""
+    """提取 [chunk_id] 中长度至少 20 的十六进制 id，按出现顺序去重。"""
     found: list[str] = []
     seen: set[str] = set()
     for match in CHUNK_ID_RE.finditer(text.lower()):
-        chunk_id = match.group(0)
+        chunk_id = match.group(1)
         if chunk_id not in seen:
             seen.add(chunk_id)
             found.append(chunk_id)

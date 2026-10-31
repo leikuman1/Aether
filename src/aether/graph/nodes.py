@@ -169,7 +169,7 @@ async def grade(state: AgentState, llm: BaseChatModel) -> dict:
             min_quote_chars=min_quote,
         )
     )
-    model_yes = bool(proposal.get("sufficient")) if isinstance(proposal, dict) else False
+    model_yes = isinstance(proposal, dict) and proposal.get("sufficient") is True
     if error_code:
         decision = "error"
         reason = "llm_unavailable"

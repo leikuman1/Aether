@@ -98,6 +98,50 @@ def test_citation_ids_must_come_from_retrieved_set() -> None:
     assert not is_extractive(f"Paris. {QUOTE} [{CID}]", [QUOTE])
 
 
+def test_citation_extraction_requires_brackets_and_preserves_order() -> None:
+    digest = "a" * 64
+    answer = f"{digest} {CID} [{FAKE_CID.upper()}] [{CID.upper()}] [{FAKE_CID}]"
+    assert extract_chunk_ids(answer) == [FAKE_CID, CID]
+    assert fabricated_citation_ids(answer, {CID}) == [FAKE_CID]
+    assert extract_chunk_ids(f"{digest} {CID}") == []
+    assert extract_chunk_ids(f"[{digest}]") == [digest]
+
+
+@pytest.mark.asyncio
+async def test_verify_accepts_bare_hash_in_copied_quote() -> None:
+    quote = f"{QUOTE} with sha256 {'a' * 64}"
+    draft = f"{quote} [{CID}]"
+    checked = await verify(
+        _state(
+            turn_hits=[_hit(quote)],
+            supporting=[{"chunk_id": CID, "quote": quote}],
+            draft=draft,
+        )
+    )
+    assert checked["verified"] is True
+    assert checked["answer"] == draft
+    assert checked["citations"] == [CID]
+    assert checked["citation_violations"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("sufficient", [True, False, "false", "true", 1, None])
+async def test_grade_requires_boolean_true(sufficient) -> None:
+    listed = FakeListChatModel(
+        responses=[
+            json.dumps(
+                {
+                    "sufficient": sufficient,
+                    "supporting": [{"chunk_id": CID, "quote": QUOTE}],
+                }
+            )
+        ]
+    )
+    graded = await grade(_state(), listed)
+    assert graded["grade"] == ("sufficient" if sufficient is True else "insufficient")
+    assert bool(graded["supporting"]) is (sufficient is True)
+
+
 def test_accept_support_drops_fabricated_ids_and_missing_anchors() -> None:
     hits = [_hit()]
     question = "quasar rollback pointer switches in version k1"

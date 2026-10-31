@@ -148,4 +148,6 @@ async def read_thread(
     async with AsyncSqliteSaver.from_conn_string(str(path)) as saver:
         compiled = build_graph(llm, searcher, retrieval_k=retrieval_k).compile(checkpointer=saver)
         snapshot = await compiled.aget_state(config)
+        if snapshot.created_at is None:
+            raise ValueError(f"unknown thread: {thread_id}")
     return _result(thread_id, snapshot)
