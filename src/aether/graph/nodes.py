@@ -97,6 +97,9 @@ async def plan(state: AgentState, llm: BaseChatModel) -> dict:
             "abstain_reason": "provider_error",
             "attempts": [],
             "citation_violations": [],
+            "human_decision": "",
+            "verify_reason": "",
+            "verified": False,
         }
     proposed = question if not data else str(data.get("query") or question)
     query = constrain_query(question, proposed, [])
@@ -276,7 +279,6 @@ async def verify(state: AgentState) -> dict:
     allowed = {hit["chunk_id"] for hit in state.get("turn_hits") or []}
     cited = extract_chunk_ids(draft)
     violations = fabricated_citation_ids(draft, allowed)
-    texts = {hit["chunk_id"]: hit["text"] for hit in state.get("turn_hits") or []}
     if violations:
         return {
             "verified": False,
@@ -293,7 +295,8 @@ async def verify(state: AgentState) -> dict:
             "citations": [],
             "abstain_reason": "no_citation",
         }
-    quotes = [texts[chunk_id] for chunk_id in cited if chunk_id in texts]
+    accepted = {item["chunk_id"]: item["quote"] for item in state.get("supporting") or []}
+    quotes = [accepted[chunk_id] for chunk_id in cited if chunk_id in accepted]
     if len(quotes) != len(cited) or not is_extractive(draft, quotes):
         return {
             "verified": False,

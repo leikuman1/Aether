@@ -214,7 +214,7 @@ def propose_support(
     min_terms: int,
     min_quote_chars: int,
 ) -> list[dict]:
-    """从检索命中里挑出能逐字引用、且通过门禁的至多一条证据。"""
+    """从检索命中里挑出所有能逐字引用、且通过门禁的证据。"""
     accepted = []
     for hit in hits:
         quote = str(hit.get("text", ""))
@@ -230,7 +230,7 @@ def propose_support(
             {"chunk_id": str(hit["chunk_id"]).lower(), "quote": quote, "overlap": overlap}
         )
     accepted.sort(key=lambda item: (-item["overlap"], item["chunk_id"]))
-    return accepted[:1]
+    return accepted
 
 
 def accept_support(
@@ -274,7 +274,7 @@ def accept_support(
             continue
         seen.add(item["chunk_id"])
         deduped.append(item)
-    return deduped[:1]
+    return deduped
 
 
 def constrain_query(question: str, proposed: str, previous: list[str]) -> str:

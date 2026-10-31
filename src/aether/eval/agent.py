@@ -93,9 +93,7 @@ def summarize(items: list[dict], *, meta: dict, settings: Settings) -> dict:
     labeled = [
         item for item in answerable if item["relevant_chunk_ids"] and item["decision"] == "answer"
     ]
-    gold_hits = sum(
-        bool(set(item["citations"]) & set(item["relevant_chunk_ids"])) for item in labeled
-    )
+    gold_hits = sum(set(item["relevant_chunk_ids"]) <= set(item["citations"]) for item in labeled)
     gold_citation_rate = gold_hits / len(labeled) if labeled else 0.0
     gate_passed = (
         len(adversarial) >= MIN_ADVERSARIAL

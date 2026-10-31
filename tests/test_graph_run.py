@@ -7,6 +7,7 @@ import pytest
 from langchain_core.language_models.fake_chat_models import FakeChatModel, FakeListChatModel
 
 from aether.graph.citations import extract_chunk_ids, fabricated_citation_ids
+from aether.graph.llm import EvidenceBoundChatModel
 from aether.graph.runner import run_turn
 from aether.retrieval.types import Chunk, RetrievedChunk
 
@@ -90,6 +91,53 @@ async def test_fake_list_model_answers_only_with_real_citation(tmp_path) -> None
     assert result["rewrite_count"] == 0
     assert model.calls == 3
     assert result["messages"][-1]["decision"] == "answer"
+
+
+@pytest.mark.asyncio
+async def test_fake_list_model_answers_with_subspan_quote(tmp_path) -> None:
+    text = f"Deployment runbook. {QUOTE}. Keep the previous deployment available."
+    hit = RetrievedChunk(Chunk(CID, "quasar", "quasar.md", 0, "Release", text), 1.0, {})
+    model = FakeListChatModel(
+        responses=[
+            json.dumps({"query": QUESTION}),
+            json.dumps(
+                {
+                    "sufficient": True,
+                    "supporting": [{"chunk_id": CID, "quote": QUOTE}],
+                }
+            ),
+            json.dumps({"answer": f"{QUOTE} [{CID}]"}),
+        ]
+    )
+    result = await run_turn(
+        question=QUESTION,
+        searcher=_Searcher([hit]),
+        llm=model,
+        **_limits(tmp_path, "subspan"),
+    )
+    assert result["decision"] == "answer"
+    assert result["verified"] is True
+    assert result["answer"] == f"{QUOTE} [{CID}]"
+    assert result["citations"] == [CID]
+
+
+@pytest.mark.asyncio
+async def test_offline_model_retains_multiple_supporting_chunks(tmp_path) -> None:
+    other_id = "abcdef0123456789abcd"
+    other_quote = "quasar rollback checks deployment health before switching traffic"
+    other_hit = RetrievedChunk(
+        Chunk(other_id, "quasar", "quasar.md", 1, "Health", other_quote), 0.9, {}
+    )
+    result = await run_turn(
+        question=QUESTION,
+        searcher=_Searcher([_retrieved(), other_hit]),
+        llm=EvidenceBoundChatModel(min_support_terms=2),
+        **_limits(tmp_path, "multi-evidence"),
+    )
+    assert result["decision"] == "answer"
+    assert set(result["citations"]) == {CID, other_id}
+    assert QUOTE in result["answer"]
+    assert other_quote in result["answer"]
 
 
 @pytest.mark.asyncio

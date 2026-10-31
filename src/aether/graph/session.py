@@ -19,10 +19,7 @@ def _settings(args: argparse.Namespace) -> Settings:
         updates["agent_rewrite_budget"] = args.rewrite_budget
     if args.k is not None:
         updates["agent_retrieval_k"] = args.k
-    settings = Settings()
-    if updates:
-        settings = settings.model_copy(update=updates)
-    return settings
+    return Settings(**updates)
 
 
 async def _run(args: argparse.Namespace) -> dict:

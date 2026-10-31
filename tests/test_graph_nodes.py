@@ -2,6 +2,7 @@
 
 import inspect
 import json
+from unittest.mock import AsyncMock
 
 import pytest
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
@@ -13,6 +14,7 @@ from aether.graph.citations import (
     is_extractive,
 )
 from aether.graph.grading import accept_support, constrain_query, content_terms, quote_supports
+from aether.graph.llm import LLMUnavailable
 from aether.graph.nodes import (
     ABSTAIN_TEXT,
     abstain,
@@ -196,6 +198,53 @@ async def test_grade_accepts_verbatim_quote_and_verify_rejects_extra_claims() ->
     assert fabricated_citation_ids(rejected["answer"], {CID}) == []
     assert CID not in rejected["answer"]
     assert rejected["answer"] == ABSTAIN_TEXT["ungrounded"]
+
+
+@pytest.mark.asyncio
+async def test_plan_provider_error_resets_previous_turn_decisions(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "aether.graph.nodes.chat_json", AsyncMock(side_effect=LLMUnavailable("llm_unavailable"))
+    )
+    state = _state(human_decision="rejected", verify_reason="ungrounded", verified=True)
+    planned = await plan(state, FakeListChatModel(responses=["unused"]))
+    assert planned["human_decision"] == ""
+    assert planned["verify_reason"] == ""
+    assert planned["verified"] is False
+    assert planned["grade"] == "error"
+    assert planned["error_code"] == "llm_unavailable"
+    result = await abstain({**state, **planned})
+    assert result["abstain_reason"] == "provider_error"
+    assert result["answer"] == ABSTAIN_TEXT["provider_error"]
+
+
+@pytest.mark.asyncio
+async def test_verify_requires_accepted_quote_for_every_cited_id() -> None:
+    other_id = "abcdef0123456789abcd"
+    other_quote = "quasar rollback checks deployment health before switching traffic"
+    checked = await verify(
+        _state(
+            turn_hits=[_hit(), _hit(other_quote, other_id)],
+            supporting=[{"chunk_id": CID, "quote": QUOTE}],
+            draft=f"{QUOTE} [{CID}]\n{other_quote} [{other_id}]",
+        )
+    )
+    assert checked["verified"] is False
+    assert checked["verify_reason"] == "ungrounded"
+    assert checked["citations"] == []
+
+
+@pytest.mark.asyncio
+async def test_verify_rejects_unaccepted_text_from_a_cited_chunk() -> None:
+    full_text = f"{QUOTE}. The release also purges the deployment cache."
+    checked = await verify(
+        _state(
+            turn_hits=[_hit(full_text)],
+            supporting=[{"chunk_id": CID, "quote": QUOTE}],
+            draft=f"{full_text} [{CID}]",
+        )
+    )
+    assert checked["verified"] is False
+    assert checked["verify_reason"] == "ungrounded"
 
 
 def test_routes_cover_budget_review_and_verify() -> None:

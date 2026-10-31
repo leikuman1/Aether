@@ -6,8 +6,10 @@ import subprocess
 import sys
 
 import pytest
+from pydantic import ValidationError
 
 from aether.config import Settings
+from aether.graph.session import _settings, build_parser
 from aether.retrieval.chunking import MarkdownChunker
 from aether.retrieval.embeddings import create_embedder
 from aether.retrieval.ingest import ingest_directory
@@ -32,6 +34,51 @@ def _run(args: list[str], env: dict) -> dict:
     )
     assert proc.returncode == 0, proc.stderr
     return json.loads(proc.stdout)
+
+
+def _session_args(*overrides: str):
+    return build_parser().parse_args(
+        [
+            "show",
+            "--thread-id",
+            "settings",
+            "--checkpoint",
+            "session.db",
+            "--index",
+            "index.db",
+            *overrides,
+        ]
+    )
+
+
+@pytest.mark.parametrize(
+    ("flag", "value", "field"),
+    [
+        ("--k", "0", "agent_retrieval_k"),
+        ("--k", "21", "agent_retrieval_k"),
+        ("--rewrite-budget", "-1", "agent_rewrite_budget"),
+        ("--rewrite-budget", "9", "agent_rewrite_budget"),
+        ("--min-support-terms", "0", "agent_min_support_terms"),
+        ("--min-support-terms", "31", "agent_min_support_terms"),
+    ],
+)
+def test_session_settings_validate_cli_overrides(flag: str, value: str, field: str) -> None:
+    with pytest.raises(ValidationError) as exc:
+        _settings(_session_args(flag, value))
+    assert exc.value.errors()[0]["loc"] == (field,)
+
+
+def test_session_settings_preserve_defaults_and_environment(monkeypatch) -> None:
+    assert _settings(_session_args()) == Settings()
+    monkeypatch.setenv("AETHER_AGENT_RETRIEVAL_K", "7")
+    monkeypatch.setenv("AETHER_AGENT_REWRITE_BUDGET", "3")
+    assert _settings(_session_args()) == Settings()
+    overridden = _settings(
+        _session_args("--k", "20", "--rewrite-budget", "0", "--min-support-terms", "30")
+    )
+    assert overridden.agent_retrieval_k == 20
+    assert overridden.agent_rewrite_budget == 0
+    assert overridden.agent_min_support_terms == 30
 
 
 @pytest.mark.asyncio

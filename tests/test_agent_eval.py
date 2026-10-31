@@ -10,7 +10,7 @@ from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 from aether.config import Settings
-from aether.eval.agent import ABSTAIN_RATE_MIN, evaluate_agent, load_jsonl
+from aether.eval.agent import ABSTAIN_RATE_MIN, evaluate_agent, load_jsonl, summarize
 from aether.graph.citations import extract_chunk_ids
 from aether.graph.grading import propose_support
 from aether.graph.llm import EvidenceBoundChatModel, create_chat_model, parse_prompt
@@ -105,6 +105,30 @@ async def test_agent_gate_abstains_and_cites_real_chunks(settings: Settings) -> 
         if item["decision"] == "answer":
             assert set(item["citations"]) <= set(item["retrieved_ids"])
             assert set(item["citations"]) & set(item["relevant_chunk_ids"])
+
+
+@pytest.mark.parametrize(
+    ("citations", "expected_rate"),
+    [(["first"], 0.0), (["second"], 0.0), (["first", "second"], 1.0)],
+)
+def test_gold_citation_rate_requires_every_evidence_unit(
+    settings: Settings, citations: list[str], expected_rate: float
+) -> None:
+    report = summarize(
+        [
+            {
+                "expect": "answer",
+                "decision": "answer",
+                "relevant_chunk_ids": ["first", "second"],
+                "citations": citations,
+                "fabricated": [],
+                "integrity_ok": True,
+            }
+        ],
+        meta={},
+        settings=settings,
+    )
+    assert report["gold_citation_rate"] == expected_rate
 
 
 @pytest.mark.asyncio
