@@ -1,0 +1,50 @@
+[project]
+name = "aether"
+version = "0.1.0"
+description = "Agentic RAG engine: corrective-retrieval agent + hybrid search + CI-gated evals"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "langchain-core>=0.3",
+    "langgraph>=0.2.60",
+    "langchain-openai>=0.2",
+    "rank-bm25>=0.2.2",
+    "numpy>=1.26",
+]
+
+[project.scripts]
+aether-api = "aether.api.app:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.7",
+    "httpx>=0.27",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aether"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+# 中文注释/docstring 允许全角标点
+ignore = ["RUF002", "RUF003"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]

@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# 虚拟环境
+.venv/
+venv/
+
+# 工具缓存
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 环境与密钥
+.env
+.env.*
+!.env.example
+
+# 运行产物（索引/会话/评测输出）；黄金集入库
+data/*
+!data/golden/
+
+# IDE / 本地
+.idea/
+.vscode/
+.claude/worktrees/
+.claude/settings.local.json
