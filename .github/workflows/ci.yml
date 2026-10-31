@@ -2,18 +2,36 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, worktree-m1-retrieval]
   pull_request:
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      AETHER_EMBEDDING_PROVIDER: fake
+      AETHER_LLM_API_KEY: ""
+      AETHER_DENSE_BACKEND: sqlite-vec
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          python-version: "3.12"
       - run: uv sync --frozen
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest -q
+      - run: uv run aether-eval retrieval --gate
+      - run: uv run python -m aether.retrieval.bench --output data/bench.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: m1-reports-${{ matrix.os }}
+          path: |
+            data/bench.json
+            data/eval/retrieval.json
