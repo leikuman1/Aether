@@ -1,0 +1,15 @@
+{"id": "q001", "query": "BM25 的 k1 和 b 分别控制什么，切块方式变化后要注意哪些统计量？", "expect": "answer", "relevant_chunk_ids": ["0ddf153601bf76062670"]}
+{"id": "q002", "query": "TF-IDF 在固定词表下如何处理新出现的产品型号？", "expect": "answer", "relevant_chunk_ids": ["739839e5a3b40e5a0665"]}
+{"id": "q008", "query": "MVCC 的普通快照读是否意味着更新操作也不会锁等待？", "expect": "answer", "relevant_chunk_ids": ["7f7ac842296605984d87"]}
+{"id": "q009", "query": "B-tree 复合索引中 tenant_id、created_at 的排列顺序有什么影响？", "expect": "answer", "relevant_chunk_ids": ["52e92e55b0f2c17e007c"]}
+{"id": "q010", "query": "async def 内调用同步阻塞客户端，对 asyncio event loop 有什么影响？", "expect": "answer", "relevant_chunk_ids": ["0e95e433420f82e605c0"]}
+{"id": "q011", "query": "TaskGroup 在一个子任务失败后怎样处理其他成员？", "expect": "answer", "relevant_chunk_ids": ["01fa2a586c2fe902cee4"]}
+{"id": "q015", "query": "Recall@k 和 MRR@k 如何计算，多证据问题该注意什么？", "expect": "answer", "relevant_chunk_ids": ["a469ccc07ac0e685a0ef"]}
+{"id": "q018", "query": "我想给所有字段都加索引提速，上线前还需要测量什么？", "expect": "answer", "relevant_chunk_ids": ["7bb6655179721d5d7fba"]}
+{"id": "q031", "query": "远程计算结果要写回数据库，怎样安排事务边界并防止覆盖并发修改？", "expect": "answer", "relevant_chunk_ids": ["1488696097daa6568f40", "fb9e617d76ee259fe961"]}
+{"id": "q034", "query": "批量异步调用外部接口时，任务创建与积压队列应该怎样一起限制？", "expect": "answer", "relevant_chunk_ids": ["24b66b5c8bdc50c8b3f5", "3ce18621eb9563a5e286"]}
+{"id": "q046", "query": "B-tree 和 Hash index 哪个适合价格区间查询，为什么？", "expect": "answer", "relevant_chunk_ids": ["703bd8f0dcc1f6d36a1b", "f6d8897b9a848dbbedd0"]}
+{"id": "q051", "query": "HNSW 和 IVF 用什么结构组织近邻，IVF 的倒排列表等同于全文倒排索引吗？", "expect": "answer", "relevant_chunk_ids": ["420385ae62ff10162f7c", "f7289321546773ddcc90"]}
+{"id": "q055", "query": "Authentication 和 Authorization 有什么区别，多租户搜索分别在哪里检查？", "expect": "answer", "relevant_chunk_ids": ["7e9939230fdf833cf29e", "bb748a64ad7f71c2c9ef"]}
+{"id": "q058", "query": "Metrics、logs、traces 的定位用途有什么不同，哪些信息适合作为指标标签？", "expect": "answer", "relevant_chunk_ids": ["936519594443379287de", "d139da19441fe0718015"]}
+{"id": "q059", "query": "按 Markdown 标题切块与按字符上限切块各应注意什么，字符数能当成 token 数吗？", "expect": "answer", "relevant_chunk_ids": ["5bb03b8d5edbd87a0fa0", "5d02c14a57d0f72d96fb"]}

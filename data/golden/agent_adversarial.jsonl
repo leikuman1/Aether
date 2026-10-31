@@ -1,0 +1,24 @@
+{"id": "a01", "query": "赤壁之战的交战双方是谁，发生于哪一年？", "expect": "abstain", "note": "历史事件不在语料内"}
+{"id": "a02", "query": "水分子的化学式是什么，摩尔质量大约是多少？", "expect": "abstain", "note": "化学常识不在语料内"}
+{"id": "a03", "query": "What is the boiling point of ethanol at 1 atmosphere in degrees Celsius?", "expect": "abstain", "note": "物理常数不在语料内"}
+{"id": "a04", "query": "贝多芬第五交响曲第一乐章的调性是什么？", "expect": "abstain", "note": "音乐作品不在语料内"}
+{"id": "a05", "query": "Who won the 2018 FIFA World Cup final?", "expect": "abstain", "note": "体育赛果不在语料内"}
+{"id": "a06", "query": "西红柿炒鸡蛋究竟应该先放糖还是先放盐？", "expect": "abstain", "note": "菜谱不在语料内"}
+{"id": "a07", "query": "What is the capital of Portugal?", "expect": "abstain", "note": "地理不在语料内"}
+{"id": "a08", "query": "用口腔温度计量到的人体正常体温大约是多少摄氏度？", "expect": "abstain", "note": "医学常识不在语料内"}
+{"id": "a09", "query": "How many moons does Mars have?", "expect": "abstain", "note": "天文不在语料内"}
+{"id": "a10", "query": "《红楼梦》前八十回的作者是谁？", "expect": "abstain", "note": "文学不在语料内"}
+{"id": "a11", "query": "In what year did the Berlin Wall fall?", "expect": "abstain", "note": "历史年份不在语料内"}
+{"id": "a12", "query": "直角边分别为 3 和 4 时，勾股定理给出的斜边是多少？", "expect": "abstain", "note": "数学题不在语料内"}
+{"id": "a13", "query": "Which planet is closest to the Sun?", "expect": "abstain", "note": "天文不在语料内"}
+{"id": "a14", "query": "第五套人民币里印有人民大会堂图案的是哪一个面额？", "expect": "abstain", "note": "货币知识不在语料内"}
+{"id": "a15", "query": "How do you patch a flat bicycle inner tube beside the road?", "expect": "abstain", "note": "生活技能不在语料内"}
+{"id": "a16", "query": "做寿司饭时通常会加入哪一种醋？", "expect": "abstain", "note": "烹饪不在语料内"}
+{"id": "a17", "query": "What is the speed of light in vacuum, expressed in metres per second?", "expect": "abstain", "note": "物理常数不在语料内"}
+{"id": "a18", "query": "野生的长颈鹿平均一昼夜大概睡几个小时？", "expect": "abstain", "note": "动物学不在语料内"}
+{"id": "a19", "query": "Who wrote the stage play Hamlet?", "expect": "abstain", "note": "文学不在语料内"}
+{"id": "a20", "query": "长江正源位于哪一座山脉？", "expect": "abstain", "note": "地理不在语料内"}
+{"id": "a21", "query": "Elasticsearch 8.11 默认的 BM25 k1 数值是多少？", "expect": "abstain", "note": "语料只解释 k1 含义，没有 8.11 默认值"}
+{"id": "a22", "query": "Robertson 在 1994 年的 TREC 实验里报告的 BM25 MAP 是多少？", "expect": "abstain", "note": "语料没有该实验数字"}
+{"id": "a23", "query": "PostgreSQL 16 默认的事务隔离级别叫什么？", "expect": "abstain", "note": "语料没有该版本的默认隔离级别"}
+{"id": "a24", "query": "Python 3.13 会不会让 TaskGroup 自动重试失败的子任务？", "expect": "abstain", "note": "语料没有 3.13 的重试行为"}

@@ -27,7 +27,7 @@ def embedding_settings(**overrides):
 
 async def test_fake_embedder_determinism_norm_empty_text_and_dimensions():
     embedder = FakeEmbedder(32)
-    texts = ["中文检索 API", "unrelated storage", "", "  \n，!?", "中文检索 API"]  # noqa: RUF001
+    texts = ["中文检索 API", "unrelated storage", "", "  \n，!?", "中文检索 API"]
     vectors = await embedder.embed_documents(texts)
     assert vectors == await FakeEmbedder(32).embed_documents(texts)
     assert vectors[0] == vectors[-1] == await embedder.embed_query(texts[0])
