@@ -27,6 +27,7 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run pytest -q
       - run: uv run aether-eval retrieval --gate
+      - run: uv run aether-eval agent --gate
       - run: uv run python -m aether.retrieval.bench --output data/bench.json
       - uses: actions/upload-artifact@v4
         if: always()
@@ -35,3 +36,4 @@ jobs:
           path: |
             data/bench.json
             data/eval/retrieval.json
+            data/eval/agent.json

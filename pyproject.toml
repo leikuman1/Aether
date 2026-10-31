@@ -16,6 +16,7 @@ dependencies = [
     "numpy>=1.26",
     "httpx>=0.27",
     "sqlite-vec>=0.1.9,<0.2",
+    "langgraph-checkpoint-sqlite>=3",
 ]
 
 [project.scripts]
@@ -45,9 +46,9 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
-# 中文注释/docstring 允许全角标点
+# 中文注释、docstring 与用户可见文案允许全角标点
 ignore = ["RUF002", "RUF003"]
-allowed-confusables = ["！", "？", "；"]
+allowed-confusables = ["！", "？", "；", "，", "：", "（", "）"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

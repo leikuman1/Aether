@@ -50,6 +50,29 @@ fixed 为 **0.9750**、Markdown 为 **0.9833**。等权 RRF 在本集反而下�
 CI 在 Windows/Linux 上执行离线单测、检索门禁与 10,000×256 向量基准，
 报告保留为 Actions artifacts。改回 `AETHER_RETRIEVAL_SPARSE_WEIGHT=1` 可演示门禁返回非零。
 
+## M2：纠错 Agent
+
+```bash
+uv run aether-retrieval ingest data/golden/corpus --chunker markdown
+uv run aether-eval agent --gate
+uv run python -m aether.graph.session start \
+  --thread-id demo --question "BM25 的 k1 和 b 分别控制什么，切块方式变化后要注意哪些统计量？" \
+  --checkpoint data/sessions.sqlite --index data/index.db --require-review
+uv run python -m aether.graph.session resume \
+  --thread-id demo --checkpoint data/sessions.sqlite --index data/index.db --approve
+uv run python -m aether.graph.session show \
+  --thread-id demo --checkpoint data/sessions.sqlite --index data/index.db
+```
+
+图是 `plan → retrieve → grade →（证据不足则有界 rewrite）→ review → generate → verify`，
+失败落到 `abstain`。verify 是确定性的：回答里每个 chunk id 必须来自本轮检索，正文必须是这些 chunk 的原文。
+无密钥时对话模型是 `EvidenceBoundChatModel`（`FakeChatModel` 子类），只会抄录通过门禁的原文。
+
+在冻结的 24 条对抗题（答案不在语料内）和 15 条可回答题上，`aether-eval agent --gate` 的离线结果是
+弃答率 **1.0000**、可回答率 **1.0000**、改写预算耗尽率 **1.0000**、标注 chunk 命中率 **1.0000**、
+编造引用 **0**。这证明的是证据门与引用校验，不是真实语义模型的答题质量。口径见
+[docs/decisions.md](docs/decisions.md)。
+
 ## 配置
 
 环境变量前缀 `AETHER_`，完整见 [.env.example](.env.example)：
@@ -59,11 +82,14 @@ CI 在 Windows/Linux 上执行离线单测、检索门禁与 10,000×256 向量�
 | `AETHER_LLM_BASE_URL` | 智谱 OpenAI 兼容端点 | 任何 OpenAI 协议服务（GLM/OpenAI/DeepSeek/vLLM） |
 | `AETHER_LLM_MODEL` | `glm-4.6` | 对话模型 |
 | `AETHER_LLM_API_KEY` | 空 | 空 = 不发起外部调用（测试/演练模式） |
+| `AETHER_AGENT_REWRITE_BUDGET` | `2` | 证据不足时的查询改写次数 |
+| `AETHER_AGENT_MIN_SUPPORT_TERMS` | `4` | 引用原文至少要覆盖的问题内容词数 |
 | `AETHER_DATA_DIR` | `./data` | 索引、会话、评测产物 |
 
 ## 路线图
 
 M1 混合检索引擎 → M2 纠错 Agent 图 → M3 SSE 服务层 → M4 评测门禁 → M5 观测与发布。
+M2 已落地：状态机、弃答、SqliteSaver 会话与对抗集门禁。
 里程碑 Issue（各带验收标准）见 [Issues](https://github.com/leikuman1/Aether/issues)。
 
 ## 结构

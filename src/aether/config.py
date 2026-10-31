@@ -33,6 +33,15 @@ class Settings(BaseSettings):
     retrieval_sparse_weight: float = Field(default=16.0, gt=0)
     retrieval_dense_weight: float = Field(default=1.0, gt=0)
 
+    # 纠错 Agent：改写次数、检索条数、证据门禁。温度 0 便于复现。
+    agent_rewrite_budget: int = Field(default=2, ge=0, le=8)
+    agent_retrieval_k: int = Field(default=5, gt=0, le=20)
+    agent_min_support_terms: int = Field(default=4, ge=1, le=30)
+    agent_min_quote_chars: int = Field(default=12, ge=8, le=200)
+    llm_timeout: float = Field(default=30.0, gt=0)
+    llm_max_retries: int = Field(default=2, ge=0, le=8)
+    llm_temperature: float = 0.0
+
     data_dir: Path = Path("data")
 
 

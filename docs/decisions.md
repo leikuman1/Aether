@@ -83,3 +83,37 @@ Reranker 协议保留，候选池先于最终 top-k，测试可证明重排可�
 本地全量测试：50 passed；测试隔离 AETHER_ 环境变量并阻断 socket 网络连接，
 只允许 Windows asyncio 内部 socketpair 构建。CI 使用相同 Fake 与 MockTransport，
 运行质量门禁并保存报告；将稀疏权重设为 1 可以复现失败门禁（exit 1）。
+
+## ADR-004：纠错 Agent 的弃答门与引用校验
+
+日期：2026-10-31。M2 把混合检索接进 LangGraph：`plan → retrieve → grade → rewrite（有界）→
+review → generate → verify → answer | abstain`。每个节点是 `AgentState` 上的异步函数。
+检查点用 `AsyncSqliteSaver`，`thread_id` 写入 SQLite；`review` 在 `require_review` 时
+`interrupt`，另一个进程用同一文件 `Command(resume=...)` 继续。集成测试用子进程而不是只在
+同一解释器里重新打开连接。
+
+弃答不是模型的口头声明。grade 只接受同时满足三点的提议：chunk id 属于这次检索、quote 是该
+chunk 的逐字子串、quote 覆盖至少 `AETHER_AGENT_MIN_SUPPORT_TERMS`（默认 4）个内容词，且问题里
+长度 ≥2 的数字锚点（`k1`、`8.11`、`1994`）都出现在 quote 中。模型说 sufficient 但引用被丢掉时，
+判为证据不足。改写只能重排原问题已有的内容词，不能把检索结果里的新词写进下一次查询。
+verify 再检查两件事：回答中每个长度 ≥20 的十六进制串都必须属于本轮 `turn_hits`；去掉这些 id 后，
+正文必须就是被引 chunk 的原文。任一失败都改写 `answer` 为不含 chunk id 的弃答句，草稿不外泄。
+提供者异常同样弃答，原因码 `provider_error`，不把异常文本写进回答。
+
+无密钥时 `create_chat_model` 返回 `EvidenceBoundChatModel`（`FakeChatModel` 子类），只提议能通过
+上述门禁的原文。有 `AETHER_LLM_API_KEY` 时才构造 `ChatOpenAI`，`base_url` / 模型 / 超时 / 重试 /
+温度都来自 Settings。测试里的预算耗尽、编造 id、额外事实和提供者 500 用 `FakeListChatModel` 或
+抛错的 `FakeChatModel` 驱动整张图。另有一个故意声称「足够」并引用 `f`×24 的敌对模型：对抗集和
+可回答集的最终回答都不含该 id。
+
+命令：`uv run aether-eval agent --gate`。报告默认写到 `data/eval/agent.json`。
+集合是 `data/golden/agent_adversarial.jsonl`（24 条，答案不在 24 篇语料内，其中 4 条带有语料里
+不存在的版本号或年份）和 `agent_answerable.jsonl`（15 条，来自 M1 标注且相关 chunk 自身能通过门禁）。
+本次离线运行：弃答率 1.0000，可回答率 1.0000，预算耗尽率 1.0000（对抗题都用满 2 次改写、3 次检索），
+15/15 回答引用了标注 chunk，编造引用 0。门禁要求对抗集 ≥20、可回答集 ≥10、两个比率 ≥0.80、
+预算耗尽率 ≥0.80、编造引用为 0、每条引用完整性为真。
+
+这些数字是 FakeEmbedder 加确定性证据门的回归结果。它证明「语料里没有可引用原文时不会硬答，
+有原文时引用必须来自本轮检索」，不证明真实对话模型的语义忠实度。真实模型仍须逐字引用；
+做不到就弃答。内容词表和锚点规则是在这批冻结问题上选定的，存在用同一集合观察重叠的偏差，
+换语料后要重新看阈值，不能把 4 当成通用语义置信度。
