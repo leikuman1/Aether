@@ -26,6 +26,7 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest -q
+      - run: uv run python -m aether.api.smoke --output data/bench/m3-sse.json
       - run: uv run aether-eval retrieval --gate
       - run: uv run aether-eval agent --gate
       - run: uv run python -m aether.retrieval.bench --output data/bench.json
@@ -35,5 +36,6 @@ jobs:
           name: m1-reports-${{ matrix.os }}
           path: |
             data/bench.json
+            data/bench/m3-sse.json
             data/eval/retrieval.json
             data/eval/agent.json

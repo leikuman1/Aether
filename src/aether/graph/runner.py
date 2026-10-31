@@ -1,8 +1,11 @@
 """一次问答的运行入口。检查点固定用 SqliteSaver，按 thread_id 恢复。"""
 
 import asyncio
+import time
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.types import Command
@@ -28,13 +31,29 @@ def configure_searcher(searcher: HybridSearcher, settings: Settings) -> HybridSe
 
 async def open_index(settings: Settings, index_path: Path) -> tuple[Embedder, HybridSearcher]:
     embedder: Embedder = create_embedder(settings)
-    searcher = await asyncio.to_thread(
-        open_searcher,
-        index_path,
-        embedder,
-        rrf_k=settings.retrieval_rrf_k,
-        route_depth=settings.retrieval_route_depth,
+    opening = asyncio.create_task(
+        asyncio.to_thread(
+            open_searcher,
+            index_path,
+            embedder,
+            rrf_k=settings.retrieval_rrf_k,
+            route_depth=settings.retrieval_route_depth,
+        )
     )
+    try:
+        searcher = await asyncio.shield(opening)
+    except BaseException:
+        # to_thread 无法取消：先接回结果并关闭，调用者才能安全释放索引占用。
+        try:
+            searcher = await opening
+        except Exception:
+            pass
+        else:
+            await searcher.aclose()
+        finally:
+            if hasattr(embedder, "aclose"):
+                await embedder.aclose()
+        raise
     return embedder, configure_searcher(searcher, settings)
 
 
@@ -47,7 +66,7 @@ def _result(thread_id: str, snapshot) -> TurnResult:
     hits = list(values.get("turn_hits") or [])
     return {
         "thread_id": thread_id,
-        "interrupted": bool(snapshot.next),
+        "interrupted": bool(interrupts),
         "interrupt": payload,
         "next": list(snapshot.next),
         "decision": str(values.get("decision") or ""),
@@ -78,6 +97,8 @@ async def run_turn(
     question: str | None = None,
     require_review: bool = False,
     resume: dict | None = None,
+    callbacks: list[BaseCallbackHandler] | None = None,
+    on_stage: Callable[[str, float], Awaitable[None]] | None = None,
 ) -> TurnResult:
     """执行一轮，或在同一 thread_id 上提交中断后的人工决定。"""
     if not thread_id.strip():
@@ -90,43 +111,50 @@ async def run_turn(
     ):
         raise ValueError("invalid agent limits")
     path = Path(checkpoint_path).resolve()
-    path.parent.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(path.parent.mkdir, parents=True, exist_ok=True)
     config = {
         "configurable": {"thread_id": thread_id},
         "recursion_limit": 80,
+        "callbacks": callbacks or [],
     }
     async with AsyncSqliteSaver.from_conn_string(str(path)) as saver:
         compiled = build_graph(llm, searcher, retrieval_k=retrieval_k).compile(checkpointer=saver)
         snapshot = await compiled.aget_state(config)
-        pending = bool(snapshot.next)
+        # 普通任务取消也会留下 next；只有显式 interrupt 才要求人工 resume。
+        # 新问题覆盖未完成轮的临时字段，已完成轮的 messages 仍由 reducer 保留。
+        pending = bool(snapshot.interrupts)
         if resume is None:
             if pending:
                 raise ValueError("thread is interrupted; resume before starting a new question")
             if question is None or not str(question).strip():
                 raise ValueError("question is required")
-            await compiled.ainvoke(
-                {
-                    "question": question.strip(),
-                    "rewrite_count": 0,
-                    "rewrite_budget": rewrite_budget,
-                    "min_support_terms": min_support_terms,
-                    "min_quote_chars": min_quote_chars,
-                    "require_review": require_review,
-                    "previous_queries": [],
-                    "hits": [],
-                    "turn_hits": [],
-                    "attempts": [],
-                    "supporting": [],
-                    "citations": [],
-                    "citation_violations": [],
-                    "messages": [],
-                },
-                config,
-            )
+            graph_input = {
+                "question": question.strip(),
+                "rewrite_count": 0,
+                "rewrite_budget": rewrite_budget,
+                "min_support_terms": min_support_terms,
+                "min_quote_chars": min_quote_chars,
+                "require_review": require_review,
+                "previous_queries": [],
+                "hits": [],
+                "turn_hits": [],
+                "attempts": [],
+                "supporting": [],
+                "citations": [],
+                "citation_violations": [],
+                "messages": [],
+            }
         else:
             if not pending:
                 raise ValueError("thread has no pending interrupt")
-            await compiled.ainvoke(Command(resume=resume), config)
+            graph_input = Command(resume=resume)
+        tick = time.perf_counter()
+        async for update in compiled.astream(graph_input, config, stream_mode="updates"):
+            elapsed_ms = (time.perf_counter() - tick) * 1000
+            for stage in update:
+                if stage != "__interrupt__" and on_stage is not None:
+                    await on_stage(stage, elapsed_ms)
+            tick = time.perf_counter()
         snapshot = await compiled.aget_state(config)
     return _result(thread_id, snapshot)
 

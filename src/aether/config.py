@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     llm_max_retries: int = Field(default=2, ge=0, le=8)
     llm_temperature: float = 0.0
 
+    # 服务采用单 worker；同 thread 串行，不同 thread 并发，摄取期间拒绝新聊天。
+    api_request_timeout: float = Field(default=60.0, gt=0)
+    api_max_concurrency: int = Field(default=32, ge=1, le=512)
+    api_token_chunk_chars: int = Field(default=16, ge=1, le=256)
+    api_ingest_root: Path | None = None  # 默认 data_dir/corpus；仅允许此根目录内摄取
+    llm_input_cost_per_million: float = Field(default=0.0, ge=0, allow_inf_nan=False)
+    llm_output_cost_per_million: float = Field(default=0.0, ge=0, allow_inf_nan=False)
+
     data_dir: Path = Path("data")
 
 
