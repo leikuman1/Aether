@@ -25,6 +25,31 @@ cp .env.example .env                                     # 可选：填 AETHER_L
 uv run aether-api                                        # 启动服务 → http://127.0.0.1:8000/docs
 ```
 
+## M1：可复现的检索演示
+
+```bash
+uv run aether-retrieval ingest data/golden/corpus --chunker markdown
+uv run aether-retrieval query "RRF 的 k 和 top_k 有什么区别？"
+uv run aether-retrieval info
+uv run aether-eval retrieval --gate
+uv run python -m aether.retrieval.bench --output data/bench.json
+```
+
+默认 FakeEmbedder，无网络、无密钥。生产 embedding 设置 `AETHER_EMBEDDING_PROVIDER=openai`，
+并通过环境变量提供兼容端点、密钥、模型和输出维度；HTTP 客户端包含有界重试、超时、批量与响应校验。
+索引完整持久化到单个 SQLite 文件，恢复时验证 embedding 身份与维度；摄取失败保留旧库。
+查询 JSON 包含 chunk 来源、每路得分、阶段时延及候选数；Reranker 协议可替换。
+
+24 篇文档、60 条查询、91 个预标注证据单元；两种分块与三路指标同时输出，
+完整 JSON 默认保存到 `data/eval/retrieval.json`，包含逐条命中与类别细分。
+默认保守 RRF 权重 16:1，在 FakeEmbedder 下与 BM25 的 recall@5 持平：
+fixed 为 **0.9750**、Markdown 为 **0.9833**。等权 RRF 在本集反而下降，
+不能把这些离线数字解读为真实 embedding 的语义质量或融合收益。
+基准、分块对比、失败基线和配置选择见 [docs/decisions.md](docs/decisions.md)。
+
+CI 在 Windows/Linux 上执行离线单测、检索门禁与 10,000×256 向量基准，
+报告保留为 Actions artifacts。改回 `AETHER_RETRIEVAL_SPARSE_WEIGHT=1` 可演示门禁返回非零。
+
 ## 配置
 
 环境变量前缀 `AETHER_`，完整见 [.env.example](.env.example)：
