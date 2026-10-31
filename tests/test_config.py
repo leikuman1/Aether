@@ -1,6 +1,17 @@
 from aether.config import Settings
 
 
+def test_settings_ignores_working_directory_dotenv(monkeypatch, tmp_path) -> None:
+    (tmp_path / ".env").write_text(
+        "AETHER_LLM_MODEL=from-dotenv\nAETHER_LLM_API_KEY=secret\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    settings = Settings()
+    assert settings.llm_model == "glm-4.6"
+    assert settings.llm_api_key == ""
+
+
 def test_settings_env_prefix(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("AETHER_LLM_MODEL", "test-model")
     monkeypatch.delenv("AETHER_LLM_API_KEY", raising=False)

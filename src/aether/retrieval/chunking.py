@@ -76,7 +76,11 @@ def _sections(text: str) -> list[tuple[str, str]]:
             token = marker.group(1)
             if fence is None:
                 fence = token
-            elif token[0] == fence[0] and len(token) >= len(fence):
+            elif (
+                token[0] == fence[0]
+                and len(token) >= len(fence)
+                and not line.lstrip()[len(token) :].strip()
+            ):
                 fence = None
             sections[-1][1].append(line)
             continue

@@ -2,7 +2,8 @@
 
 import re
 
-_PARTS = re.compile(r"[㐀-鿿぀-ヿ가-힯]+|[^\W_]+", re.UNICODE)
+_CJK = "\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af"
+_PARTS = re.compile(rf"[{_CJK}]+|[^\W_{_CJK}]+", re.UNICODE)
 
 
 def _is_cjk(ch: str) -> bool:

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
+from aether.config import Settings
 from aether.retrieval.dense import _open_conn, create_dense_index
 
 
@@ -40,6 +41,7 @@ def benchmark(n: int = 10000, dim: int = 256, queries: int = 100) -> dict:
         for backend in ("numpy", "sqlite-vec"):
             path = Path(tmp) / f"{backend}.db"
             index = None
+            conn = None
             try:
                 started = time.perf_counter()
                 conn = _open_conn(str(path), extension=backend == "sqlite-vec")
@@ -71,7 +73,8 @@ def benchmark(n: int = 10000, dim: int = 256, queries: int = 100) -> dict:
             finally:
                 if index is not None:
                     index.close()
-    report["selected"] = "sqlite-vec" if report["backends"]["sqlite-vec"]["passed"] else "numpy"
+                if conn is not None:
+                    conn.close()
     return report
 
 
@@ -82,14 +85,16 @@ def main() -> None:
     parser.add_argument("--queries", type=int, default=100)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
+    configured = Settings().dense_backend
     report = benchmark(args.n, args.dim, args.queries)
+    # 退出码只认配置中的默认后端。NumPy 通过不能代替未通过的 sqlite-vec。
+    report["selected"] = configured
     text = json.dumps(report, ensure_ascii=False, indent=2)
     print(text)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(text + "\n", encoding="utf-8")
-    # numpy 是明确退路，但双后端都失败时必须红。
-    if not any(r["passed"] for r in report["backends"].values()):
+    if not report["backends"].get(configured, {}).get("passed"):
         raise SystemExit(1)
 
 

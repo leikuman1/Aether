@@ -26,7 +26,10 @@ Ubuntu Python 3.12.3 / SQLite 3.45.1；Windows Python 3.12.10 / SQLite 3.49.1。
 两个平台 sqlite-vec 均通过既定门槛，默认选择 sqlite-vec：具备无外部服务的持久化 KNN，
 文件比 NumPy 小约 20.5%；它在此规模的查询速度慢于 NumPy，不宣称性能胜出。
 显式设置 `AETHER_DENSE_BACKEND=numpy` 即可退回；扩展加载失败会明确报错，不静默更换索引格式。
-NumPy 后端不加载 sqlite-vec 扩展。性能样本不作 CI 稳定性承诺，
+NumPy 后端不加载 sqlite-vec 扩展。表中毫秒数随机器波动，不是跨环境 SLO。
+`python -m aether.retrieval.bench` 的退出码只认当前配置的默认后端
+（`Settings.dense_backend`，默认 sqlite-vec，可由 `AETHER_DENSE_BACKEND` 覆盖）是否通过门槛；
+NumPy 通过不能使默认 sqlite-vec 未通过的运行成功。
 正确性/评测门禁由测试独立保障。原始 JSON 保留在 Actions artifacts。
 
 ## ADR-002：两种分块与离线三路比较

@@ -1,5 +1,8 @@
 import copy
 import json
+import sqlite3
+import tempfile
+import threading
 from pathlib import Path
 
 import pytest
@@ -7,6 +10,7 @@ import pytest
 from aether.config import Settings
 from aether.eval.retrieval import evaluate, load_golden, recall_at_k, reciprocal_rank
 from aether.retrieval.chunking import MarkdownChunker
+from aether.retrieval.hybrid import HybridSearcher
 from aether.retrieval.loaders import load_directory
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,11 +26,30 @@ def test_metrics_known_rankings_and_duplicate_hits():
         recall_at_k([], set(), 5)
 
 
-async def test_golden_gate_reproducibility_and_label_integrity(tmp_path):
+async def test_golden_gate_reproducibility_and_label_integrity(tmp_path, monkeypatch):
     settings = Settings(_env_file=None, llm_api_key="", data_dir=tmp_path)
     corpus = ROOT / "data/golden/corpus"
     golden = ROOT / "data/golden/retrieval.jsonl"
+    main_thread = threading.get_ident()
+    created: list[int] = []
+    cleaned: list[tuple[int, str]] = []
+    original_init = tempfile.TemporaryDirectory.__init__
+    original_cleanup = tempfile.TemporaryDirectory.cleanup
+
+    def init(self, *args, **kwargs):
+        created.append(threading.get_ident())
+        original_init(self, *args, **kwargs)
+
+    def cleanup(self):
+        cleaned.append((threading.get_ident(), self.name))
+        original_cleanup(self)
+
+    monkeypatch.setattr(tempfile.TemporaryDirectory, "__init__", init)
+    monkeypatch.setattr(tempfile.TemporaryDirectory, "cleanup", cleanup)
     first = await evaluate(settings, corpus, golden)
+    assert created and all(ident != main_thread for ident in created)
+    assert cleaned
+    assert all(ident != main_thread and not Path(name).exists() for ident, name in cleaned)
     second = await evaluate(settings, corpus, golden)
     assert first["queries"] >= 50
     assert first["gate_passed"] is True
@@ -45,6 +68,37 @@ async def test_golden_gate_reproducibility_and_label_integrity(tmp_path):
     bad.write_text("\n".join(json.dumps(row) for row in corrupted), encoding="utf-8")
     with pytest.raises(ValueError, match="stale canonical"):
         await evaluate(settings, corpus, bad)
+
+
+async def test_label_mapping_failure_closes_searcher(tmp_path, monkeypatch):
+    import aether.eval.retrieval as retrieval
+
+    settings = Settings(_env_file=None, llm_api_key="", data_dir=tmp_path)
+    canonical_ids: set[str] | None = None
+    closed: list[HybridSearcher] = []
+    real_ids = retrieval.evidence_ids
+    real_close = HybridSearcher.aclose
+
+    def mapped(row, chunks):
+        nonlocal canonical_ids
+        ids = {chunk.chunk_id for chunk in chunks}
+        if canonical_ids is None:
+            canonical_ids = ids
+        if ids != canonical_ids:
+            raise ValueError(f"unmapped evidence in {row['id']}: forced")
+        return real_ids(row, chunks)
+
+    async def tracking_close(self):
+        closed.append(self)
+        await real_close(self)
+
+    monkeypatch.setattr(retrieval, "evidence_ids", mapped)
+    monkeypatch.setattr(HybridSearcher, "aclose", tracking_close)
+    with pytest.raises(ValueError, match="unmapped evidence"):
+        await evaluate(settings, ROOT / "data/golden/corpus", ROOT / "data/golden/retrieval.jsonl")
+    assert closed
+    with pytest.raises(sqlite3.ProgrammingError):
+        closed[0].dense._conn.execute("SELECT 1")
 
 
 async def test_equal_weight_regression_is_visible(tmp_path):

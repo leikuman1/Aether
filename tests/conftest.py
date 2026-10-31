@@ -11,6 +11,7 @@ from aether.config import Settings
 
 @pytest.fixture(autouse=True)
 def isolated_environment(monkeypatch):
+    monkeypatch.setitem(Settings.model_config, "env_file", None)
     for key in list(os.environ):
         if key.startswith("AETHER_"):
             monkeypatch.delenv(key)

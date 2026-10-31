@@ -100,82 +100,86 @@ async def evaluate(settings: Settings, corpus: Path, golden_path: Path) -> dict:
         "relevance_rule": "same doc, >= half continuous evidence text (minimum 40 chars)",
         "strategies": [],
     }
+    tmp_dir = None
     try:
-        with tempfile.TemporaryDirectory() as tmp:
-            for strategy in ("fixed", "markdown"):
-                chunker = get_chunker(strategy)
-                searcher = await ingest_directory(
-                    corpus,
-                    chunker,
-                    embedder,
-                    Path(tmp) / f"{strategy}.db",
-                    dense_backend=settings.dense_backend,
-                )
-                searcher.rrf_k = settings.retrieval_rrf_k
-                searcher.route_depth = settings.retrieval_route_depth
-                searcher.sparse_weight = settings.retrieval_sparse_weight
-                searcher.dense_weight = settings.retrieval_dense_weight
-                chunks = list(searcher.chunks.values())
+        tmp_dir = await asyncio.to_thread(tempfile.TemporaryDirectory)
+        tmp = tmp_dir.name
+        for strategy in ("fixed", "markdown"):
+            chunker = get_chunker(strategy)
+            searcher = await ingest_directory(
+                corpus,
+                chunker,
+                embedder,
+                Path(tmp) / f"{strategy}.db",
+                dense_backend=settings.dense_backend,
+            )
+            searcher.rrf_k = settings.retrieval_rrf_k
+            searcher.route_depth = settings.retrieval_route_depth
+            searcher.sparse_weight = settings.retrieval_sparse_weight
+            searcher.dense_weight = settings.retrieval_dense_weight
+            chunks = list(searcher.chunks.values())
+            entry = {
+                "chunker": chunker.name,
+                "chunks": len(chunks),
+                "corpus_fingerprint": corpus_fingerprint(chunks),
+                "routes": {},
+            }
+            try:
                 labels = {r["id"]: evidence_ids(r, chunks) for r in rows}
-                entry = {
-                    "chunker": chunker.name,
-                    "chunks": len(chunks),
-                    "corpus_fingerprint": corpus_fingerprint(chunks),
-                    "routes": {},
-                }
-                try:
-                    for mode in ("bm25", "dense", "hybrid"):
-                        records = []
-                        for row in rows:
-                            hits, trace = await searcher.search_with_trace(row["query"], 10, mode)
-                            ranked = [h.chunk.chunk_id for h in hits]
-                            relevant = labels[row["id"]]
-                            records.append(
-                                {
-                                    "id": row["id"],
-                                    "query": row["query"],
-                                    "category": row["category"],
-                                    "relevant_chunk_ids": sorted(relevant),
-                                    "retrieved_chunk_ids": ranked,
-                                    **{
-                                        f"recall@{k}": recall_at_k(ranked, relevant, k)
-                                        for k in (1, 5, 10)
-                                    },
-                                    "mrr@10": reciprocal_rank(ranked, relevant, 10),
-                                    "hits": [
-                                        {
-                                            "chunk_id": h.chunk.chunk_id,
-                                            "score": h.score,
-                                            "route_scores": h.route_scores,
-                                        }
-                                        for h in hits
-                                    ],
-                                    "trace": trace,
-                                }
-                            )
-                        grouped = defaultdict(list)
-                        for record in records:
-                            grouped[record["category"]].append(record)
-                        times = sorted(r["trace"]["total_ms"] for r in records)
-                        entry["routes"][mode] = {
-                            **_aggregate(records),
-                            "latency_p50_ms": statistics.median(times),
-                            "latency_p95_ms": times[max(0, int(len(times) * 0.95) - 1)],
-                            "categories": {
-                                key: _aggregate(values) for key, values in grouped.items()
-                            },
-                            "per_query": records,
-                        }
-                finally:
-                    await searcher.aclose()
-                routes = entry["routes"]
-                entry["gate_passed"] = routes["hybrid"]["recall@5"] + 1e-12 >= max(
-                    routes["bm25"]["recall@5"],
-                    routes["dense"]["recall@5"],
-                )
-                report["strategies"].append(entry)
+                for mode in ("bm25", "dense", "hybrid"):
+                    records = []
+                    for row in rows:
+                        hits, trace = await searcher.search_with_trace(row["query"], 10, mode)
+                        ranked = [h.chunk.chunk_id for h in hits]
+                        relevant = labels[row["id"]]
+                        records.append(
+                            {
+                                "id": row["id"],
+                                "query": row["query"],
+                                "category": row["category"],
+                                "relevant_chunk_ids": sorted(relevant),
+                                "retrieved_chunk_ids": ranked,
+                                **{
+                                    f"recall@{k}": recall_at_k(ranked, relevant, k)
+                                    for k in (1, 5, 10)
+                                },
+                                "mrr@10": reciprocal_rank(ranked, relevant, 10),
+                                "hits": [
+                                    {
+                                        "chunk_id": h.chunk.chunk_id,
+                                        "score": h.score,
+                                        "route_scores": h.route_scores,
+                                    }
+                                    for h in hits
+                                ],
+                                "trace": trace,
+                            }
+                        )
+                    grouped = defaultdict(list)
+                    for record in records:
+                        grouped[record["category"]].append(record)
+                    times = sorted(r["trace"]["total_ms"] for r in records)
+                    entry["routes"][mode] = {
+                        **_aggregate(records),
+                        "latency_p50_ms": statistics.median(times),
+                        "latency_p95_ms": times[max(0, int(len(times) * 0.95) - 1)],
+                        "categories": {key: _aggregate(values) for key, values in grouped.items()},
+                        "per_query": records,
+                    }
+            finally:
+                await searcher.aclose()
+            routes = entry["routes"]
+            entry["gate_passed"] = routes["hybrid"]["recall@5"] + 1e-12 >= max(
+                routes["bm25"]["recall@5"],
+                routes["dense"]["recall@5"],
+            )
+            report["strategies"].append(entry)
     finally:
-        if hasattr(embedder, "aclose"):
-            await embedder.aclose()
+        try:
+            if tmp_dir is not None:
+                await asyncio.to_thread(tmp_dir.cleanup)
+        finally:
+            if hasattr(embedder, "aclose"):
+                await embedder.aclose()
     report["gate_passed"] = len(rows) >= 50 and all(s["gate_passed"] for s in report["strategies"])
     return report

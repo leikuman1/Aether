@@ -100,12 +100,12 @@ def test_fixed_window_sentence_boundary_and_exact_size():
 def test_markdown_heading_hierarchy_ignores_fenced_headings(fence):
     text = (
         f"intro\n# Parent\nfirst\n{fence}\n# literal heading\n"
-        f"## also literal\n{fence}\n## Child\nsecond\n# Peer\nthird"
+        f"{fence}python\n## also literal\n{fence}\n## Child\nsecond\n# Peer\nthird"
     )
     chunks = MarkdownChunker(200).split(Document("a", "a.md", text))
     assert [c.heading for c in chunks] == ["", "Parent", "Parent > Child", "Peer"]
     assert chunks[0].text == "intro"
-    assert f"{fence}\n# literal heading\n## also literal\n{fence}" in chunks[1].text
+    assert f"{fence}\n# literal heading\n{fence}python\n## also literal\n{fence}" in chunks[1].text
     assert chunks[2].text == "Parent > Child\nsecond"
     assert chunks[3].text == "Peer\nthird"
 
@@ -138,6 +138,9 @@ def test_tokenizer_cjk_bigrams_stop_at_punctuation():
         assert "文检" not in words and "文检" not in subwords
         assert "<ap" in subwords and "pi>" in subwords
     assert tokenize_words("かな。한국") == ["か", "な", "かな", "한", "국", "한국"]
+    assert tokenize_words("BM25算法") == ["bm25", "算", "法", "算法"]
+    assert tokenize_words("2024年") == ["2024", "年"]
+    assert tokenize_words("算法BM25") == ["算", "法", "算法", "bm25"]
 
 
 def test_dense_cosine_ranking_upsert_and_empty(dense):
