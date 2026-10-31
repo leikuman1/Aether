@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     embedding_batch_size: int = Field(default=64, gt=0)
     embedding_max_retries: int = Field(default=3, ge=0, le=10)
     embedding_retry_delay: float = Field(default=0.5, ge=0)
-    dense_backend: Literal["numpy", "sqlite-vec"] = "numpy"
+    dense_backend: Literal["numpy", "sqlite-vec"] = "sqlite-vec"
     retrieval_rrf_k: int = Field(default=60, gt=0)
     retrieval_route_depth: int = Field(default=50, gt=0, le=4096)
     # 离线 FakeEmbedder 的保守配置；真实模型需在独立标注集重新校准。

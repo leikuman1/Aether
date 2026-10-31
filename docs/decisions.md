@@ -16,10 +16,17 @@
 |---|---:|---:|---:|---:|---:|
 | Windows 11 / NumPy | 323.786 | 0.954 | 1.346 | 1.0 | 13,893,632 |
 | Windows 11 / sqlite-vec 0.1.9 | 366.538 | 20.203 | 32.380 | 1.0 | 11,042,816 |
+| CI Ubuntu / NumPy | 294.015 | 1.092 | 2.730 | 1.0 | 13,893,632 |
+| CI Ubuntu / sqlite-vec 0.1.9 | 373.564 | 5.172 | 5.453 | 1.0 | 11,042,816 |
+| CI Windows Server 2025 / NumPy | 798.005 | 0.827 | 0.867 | 1.0 | 13,893,632 |
+| CI Windows Server 2025 / sqlite-vec 0.1.9 | 503.538 | 7.286 | 7.538 | 1.0 | 11,042,816 |
 
-Linux 与 CI Windows 数字由同一提交的 Actions 双平台矩阵补入。若任一平台扩展不可用或
-达不到门槛，统一默认 NumPy；两者都通过才将默认改为 sqlite-vec。
-NumPy 后端不加载 sqlite-vec 扩展，保持可移植退路。性能样本不作 CI 稳定性承诺，
+双平台结果来自提交 `9840125` 的 [CI run 41170125076](https://github.com/leikuman1/Aether/actions/runs/41170125076)。
+Ubuntu Python 3.12.3 / SQLite 3.45.1；Windows Python 3.12.10 / SQLite 3.49.1。
+两个平台 sqlite-vec 均通过既定门槛，默认选择 sqlite-vec：具备无外部服务的持久化 KNN，
+文件比 NumPy 小约 20.5%；它在此规模的查询速度慢于 NumPy，不宣称性能胜出。
+显式设置 `AETHER_DENSE_BACKEND=numpy` 即可退回；扩展加载失败会明确报错，不静默更换索引格式。
+NumPy 后端不加载 sqlite-vec 扩展。性能样本不作 CI 稳定性承诺，
 正确性/评测门禁由测试独立保障。原始 JSON 保留在 Actions artifacts。
 
 ## ADR-002：两种分块与离线三路比较

@@ -87,7 +87,9 @@ async def evaluate(settings: Settings, corpus: Path, golden_path: Path) -> dict:
         "schema_version": 1,
         "queries": len(rows),
         "embedder": embedder.name,
-        "golden_sha256": hashlib.sha256(golden_path.read_bytes()).hexdigest(),
+        "golden_sha256": hashlib.sha256(
+            (await asyncio.to_thread(golden_path.read_text, encoding="utf-8")).encode()
+        ).hexdigest(),
         "configuration": {
             "backend": settings.dense_backend,
             "rrf_k": settings.retrieval_rrf_k,
