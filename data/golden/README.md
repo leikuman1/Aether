@@ -35,6 +35,18 @@
 - `agent_answerable.jsonl`：15 条，问句和 `relevant_chunk_ids` 来自 `retrieval.jsonl` 的子集。标签要求对应的 M1 证据 chunk 自身就能通过同一道证据门。
 - 两个文件都不保存模型输出。`uv run aether-eval agent --gate` 才把问题送进图，并检查弃答率、可回答率、改写预算和引用是否落在本轮检索结果里。
 
+## M4 答案黄金集与 judge fixtures
+
+- `answer.jsonl`：42 条，复用 M1 人工问题、证据和 canonical chunk IDs；标准答案为标注证据原文按顺序连接。四类数量为 exact_term=10、paraphrase=10、multi_evidence=13、contrast=9。查询没有注入答案，未修改原始证据标签。
+- 选择规则：先用既有离线 Agent 跑 M1 的 60 条，保留最终回答包含全部标注 chunk 的 42 条。60 条中 49 条有回答、42 条完整覆盖 gold。这是**依据当前系统可回答性筛选的回归集**，有选择偏差，不能用于证明独立集泛化或真实语义能力。未入选问题仍在 M1 检索集保留。
+- `reference_answer` 是标准答案正文；`relevant_chunk_ids` 是标准引用；`evidence` 是带 `doc_id` 的逐字证据。评测与测试验证引用 ID 存在、证据逐字存在。内容变化导致 canonical ID 过期时明确失败。
+- `answer_judge_fixtures.jsonl`：84 条评分（42 × 2），来源明确为 `aether-lexical-judge`，由 `uv run aether-eval answer --judge fake --record` 录制，**没有冒充真实 LLM 实测**。key 为固定 rubric 和完整输入 prompt 的 SHA-256；缺项即退出 2，绝不自动生成新分数。评分原因保留分子/分母。
+- `answer_baseline.jsonl`：初始离线版本的真实报告摘要，供 CI 每次报告差值。合并后的新版可把上一版本输出 JSON 传入 `--baseline` 或更新这份基准；不要把基准刷新当作修复退步。
+
+词面代理 faithfulness 计算「回答非空行能在被引 chunk 原文找到」的比例；relevance 计算「问题与参考答案内容词并集被回答覆盖」的比例。它只对当前抽取式管线提供离线回归下限，不判断语义等价、矛盾、冗余或词袋作弊。曾比较问题词 recall 和答案词 precision；前者中位数 0.4、后者均值 0.6227，均不适合整段原文回答。最终参考内容词覆盖均值 0.913101，最低 0.7885（q020）；阈值 0.8 作用于均值，不要求每条 ≥0.8。这是同集开发，存在度量选择偏差。
+
+真实 LLM-as-judge 经 Settings 的 OpenAI 兼容配置显式启用 `--judge openai`；rubric 固定、温度强制 0（覆盖生成模型的温度），返回非法/非有限/越界分数均失败。`--repeat 3` 度量逐输入相对首轮最大偏差；词面与回放实验为 0，真实 judge 未测，温度 0 不保证供应商绝对确定性。稳定性数据、实验命令与边界见 ADR-006。
+
 ## 生成与校验
 
 原始正文和问题由人工逐条构造，临时脚本仅序列化这些固定文本并检查一致性，不随库保存。生成时校验文档数量与三个小节、正文和证据长度、60 个唯一问题与 ID、四类各 15 条、全部证据为对应正文的精确子串，并确认产物均可按 UTF-8 解码、无 BOM、使用 LF。检索结果从未参与标签生成；canonical chunk ID 与 fixed 切块适配由主线程完成。

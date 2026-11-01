@@ -39,3 +39,33 @@ jobs:
             data/bench/m3-sse.json
             data/eval/retrieval.json
             data/eval/agent.json
+
+  answer-eval:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      AETHER_EMBEDDING_PROVIDER: fake
+      AETHER_LLM_API_KEY: ""
+      AETHER_DENSE_BACKEND: sqlite-vec
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - name: Replay answer quality gate (maximum 3 minutes)
+        timeout-minutes: 3
+        run: >-
+          uv run aether-eval answer --judge replay --gate --repeat 3
+          --baseline data/golden/answer_baseline.jsonl
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: m4-answer-reports
+          path: |
+            data/eval/answer.json
+            data/eval/answer_history.jsonl
