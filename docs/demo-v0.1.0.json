@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "mode": "offline",
+  "llm_configured": false,
+  "embedding_provider": "fake",
+  "corpus": "data/golden/corpus",
+  "question": "BM25 的 k1 和 b 分别控制什么，切块方式变化后要注意哪些统计量？",
+  "ingest": {
+    "chunker": "markdown-480",
+    "corpus_fingerprint": "9aff716e40a4eb95e2f667ea46fa4de293062eae38a0f108b7eb91af0ae10cc4",
+    "dense_backend": "sqlite-vec",
+    "dim": "256",
+    "embedder": "fake-hash-v1-256d",
+    "num_chunks": "72",
+    "num_docs": "24",
+    "schema_version": "1",
+    "chunks": 72,
+    "docs": 24
+  },
+  "ask": {
+    "thread_id": "demo",
+    "trace_id": "c027034288c940f7b55b132c78dd2042",
+    "decision": "answer",
+    "verified": true,
+    "abstain_reason": "",
+    "answer": "BM25 词法检索 > Parameters and corpus\nBM25 的 k1 控制词频饱和速度，b 调整文档长度归一化强度。参数含义与实现细节需要一起核对，不应把单个语料上的最佳值视为普适常量。文档切块改变长度分布与文档频率，重建语料索引后应重新记录统计信息，并在固定标注查询上检查排名变化，避免把数据变化误判成算法改进。 [0ddf153601bf76062670]",
+    "usage": {
+      "input_tokens": 1328,
+      "output_tokens": 273,
+      "total_tokens": 1601,
+      "cost_usd": "0",
+      "source": "estimated"
+    },
+    "slowest_stage": "verify",
+    "slowest_elapsed_ms": 6.68,
+    "stages": [
+      {
+        "stage": "plan",
+        "elapsed_ms": 4.114,
+        "cost_usd": "0"
+      },
+      {
+        "stage": "retrieve",
+        "elapsed_ms": 2.706,
+        "cost_usd": "0"
+      },
+      {
+        "stage": "grade",
+        "elapsed_ms": 1.666,
+        "cost_usd": "0"
+      },
+      {
+        "stage": "review",
+        "elapsed_ms": 1.171,
+        "cost_usd": "0"
+      },
+      {
+        "stage": "generate",
+        "elapsed_ms": 0.888,
+        "cost_usd": "0"
+      },
+      {
+        "stage": "verify",
+        "elapsed_ms": 6.68,
+        "cost_usd": "0"
+      }
+    ]
+  },
+  "eval": {
+    "retrieval": {
+      "gate_passed": true,
+      "queries": 60,
+      "strategies": [
+        {
+          "chunker": "fixed-400-64",
+          "gate_passed": true,
+          "recall@5": {
+            "bm25": 0.975,
+            "dense": 0.8666666666666667,
+            "hybrid": 0.975
+          }
+        },
+        {
+          "chunker": "markdown-480",
+          "gate_passed": true,
+          "recall@5": {
+            "bm25": 0.9833333333333333,
+            "dense": 0.7416666666666667,
+            "hybrid": 0.9833333333333333
+          }
+        }
+      ]
+    }
+  },
+  "gate_passed": true,
+  "elapsed_s": 0.657
+}

@@ -205,3 +205,32 @@ uv run ruff format --check .
 指标摘要，第二次运行对比上一条；`--baseline` 支持完整 JSON 报告或 JSONL 最后一条，
 CI 使用入库基准以便全新 checkout 也能输出差值。对比仅报告退步项，硬门槛决定退出码；
 历史不自动与 GitHub 跨运行合并，Actions artifacts 保留该次报告与历史。更新基准需评审。
+
+## ADR-007：M5 的 trace、压测口径与离线演示
+
+日期：2026-11-01。不引入 APM，也不新增运行时依赖。日志是一行一个 JSON 对象，
+字段固定带 `trace_id`。聊天的每个图节点另有 `elapsed_ms` 和该节点相对上一节点的
+对话模型 token / `cost_usd` 增量。增量来自现有 `RequestUsage` snapshot，不新算一套账单。
+请求结束的 `chat_complete` 写出 `slowest_stage`。时延相同的阶段取更晚的一条。
+
+`GET /v1/traces/{trace_id}` 读进程内 256 条环形缓冲。缓冲在重启或被挤出后消失。
+这时用 `aether-trace --log` 扫 JSON 日志；只要还有 `stage` 行，就以它们为准，
+不采信摘要里可能过期的字段。没有图节点的请求（例如 `/healthz`）记一条 `http` 阶段，
+聊天在进入图之前失败则记 `request`。摄取记 `ingest`，成本为 0：embedding 仍不在 M3 的账本里。
+
+中间件是纯 ASGI，只补 `X-Aether-Trace-Id`，不把 SSE 正文读进内存。
+`http_access.elapsed_ms` 是整段 HTTP，含把 SSE 写完；`slowest_stage` 仍是节点耗时，
+两者故意不是同一个数。`uv run aether-api` 在 lifespan 里打开 JSON 日志，
+因为 uvicorn 会在导入应用之后重置 logging。测试默认不打开，避免把日志从根 logger 上摘掉。
+
+压测用 k6，而不是 hey。聊天要为每次请求生成不同的 `thread_id`，固定请求体会在第二条得到 409。
+k6 1.3.0、20 VU、40 次共享迭代、Fake 模型的这次记录：错误率 0，
+`http_req_duration` p50 = 511.6381225 ms，p95 = 1152.6481994 ms。
+这个时间包含排队和读完 SSE，不是节点耗时，也不是 provider SLO。
+k6 把失败样本放在 Rate 的 `passes`，成功样本放在 `fails`；报告里的 `errors` 已按失败次数解释。
+循环后再打一枪，端点与日志的最慢阶段都是 verify / 7.483 ms。原始 JSON 在
+`docs/loadtest-v0.1.0.json`。
+
+`uv run aether-demo` 默认清空密钥并强制 Fake embedding，然后走摄取、一次提问、检索门禁。
+`--live` 才使用 Settings 中的 provider；答案 judge 仍要显式 `--judge openai` 才会出网。
+CI 跑这条默认命令，不安装 k6。v0.1.0 的 git tag 不在功能分支上创建。

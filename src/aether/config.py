@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.0
 
     # 服务采用单 worker；同 thread 串行，不同 thread 并发，摄取期间拒绝新聊天。
+    # json_logs 默认关，避免测试把日志从根 logger 上摘掉；uv run aether-api 会打开。
+    json_logs: bool = False
     api_request_timeout: float = Field(default=60.0, gt=0)
     api_max_concurrency: int = Field(default=32, ge=1, le=512)
     api_token_chunk_chars: int = Field(default=16, ge=1, le=256)

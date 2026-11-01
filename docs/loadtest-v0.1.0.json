@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-11-01T07:05:16.922116+00:00",
+  "tool": "k6",
+  "concurrency": 20,
+  "iterations": 40,
+  "question": "BM25 的 k1 和 b 分别控制什么，切块方式变化后要注意哪些统计量？",
+  "environment": {
+    "python": "3.12.3",
+    "platform": "Linux-6.12.94+-x86_64-with-glibc2.39",
+    "llm_provider": "fake",
+    "embedding_provider": "fake"
+  },
+  "errors_detail": [],
+  "sample_trace": {
+    "trace_id": "1e7745f953074546a9421cf9200054fa",
+    "slowest_stage": "verify",
+    "slowest_elapsed_ms": 7.483,
+    "cost_usd": "0",
+    "log_slowest_stage": "verify",
+    "log_slowest_elapsed_ms": 7.483,
+    "log_matches_endpoint": true
+  },
+  "ok": true,
+  "base_url": "http://127.0.0.1:47637",
+  "requests": 40,
+  "errors": 0,
+  "error_rate": 0.0,
+  "latency_ms": {
+    "min": 28.602263,
+    "avg": 555.8370357250001,
+    "p50": 511.6381225,
+    "p95": 1152.6481994,
+    "max": 1161.828798
+  },
+  "k6_metrics": {
+    "http_req_duration": {
+      "p(99)": 1160.55145479,
+      "avg": 555.8370357250001,
+      "min": 28.602263,
+      "med": 511.6381225,
+      "max": 1161.828798,
+      "p(50)": 511.6381225,
+      "p(90)": 1136.5292907,
+      "p(95)": 1152.6481994
+    },
+    "http_req_failed": {
+      "rate": 0,
+      "passes": 0,
+      "fails": 40
+    },
+    "http_reqs": {
+      "count": 40,
+      "rate": 33.99926408422893
+    },
+    "checks": {
+      "rate": 1,
+      "passes": 40,
+      "fails": 0
+    }
+  },
+  "tool_version": "k6 v1.3.0 (commit/5870e99ae8, go1.25.1, linux/amd64)",
+  "exit_code": 0,
+  "elapsed_s": 2.31
+}

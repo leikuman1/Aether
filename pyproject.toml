@@ -21,8 +21,10 @@ dependencies = [
 
 [project.scripts]
 aether-api = "aether.api.app:main"
+aether-demo = "aether.demo:main"
 aether-eval = "aether.eval.cli:main"
 aether-retrieval = "aether.retrieval.cli:main"
+aether-trace = "aether.api.observe:main"
 
 [dependency-groups]
 dev = [
