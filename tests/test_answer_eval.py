@@ -259,7 +259,7 @@ def test_cli_report_history_replay_and_low_scores(tmp_path, capsys, monkeypatch)
             "line 1 lacks key/response",
             id="invalid-field-types",
         ),
-        pytest.param(b"[" * 2000 + b"]" * 2000, "line 1 is not JSON", id="deep-json"),
+        pytest.param(b"[" * 2000 + b"]" * 2000, "line 1 must be a JSON object", id="deep-json"),
         pytest.param(b'{"key": ' + b"9" * 5000 + b"}", "line 1 is not JSON", id="huge-int"),
         pytest.param(
             b'{"key": "a", "response": "x"}\n{"key": "a", "response": "y"}',
