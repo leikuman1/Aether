@@ -13,13 +13,14 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from langsmith import tracing_context
 
 from aether.api.app import create_app
 from aether.api.observe import configure_logging
 from aether.config import Settings
 from aether.eval.agent import evaluate_agent
 from aether.eval.answer import evaluate_answers
-from aether.eval.judge import create_judge
+from aether.eval.judge import JudgeError, create_judge
 from aether.eval.retrieval import evaluate
 
 _REPO = Path(__file__).resolve().parents[2]
@@ -316,18 +317,19 @@ def main(argv: list[str] | None = None) -> None:
     output = args.output or (settings.data_dir / "demo-report.json")
     configure_logging()
     try:
-        summary = asyncio.run(
-            run_demo(
-                settings,
-                corpus=args.corpus,
-                question=args.question,
-                thread_id=args.thread_id,
-                eval_mode=args.eval,
-                judge_mode=args.judge,
-                output=output,
+        with tracing_context(enabled=None if args.live else False):
+            summary = asyncio.run(
+                run_demo(
+                    settings,
+                    corpus=args.corpus,
+                    question=args.question,
+                    thread_id=args.thread_id,
+                    eval_mode=args.eval,
+                    judge_mode=args.judge,
+                    output=output,
+                )
             )
-        )
-    except (RuntimeError, OSError, ValueError) as exc:
+    except (JudgeError, RuntimeError, OSError, ValueError) as exc:
         parser.exit(2, f"demo failed: {exc}\n")
     _print(summary, output)
     if not summary["gate_passed"]:

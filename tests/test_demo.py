@@ -4,8 +4,12 @@ import asyncio
 from pathlib import Path
 
 import pytest
+from langsmith import tracing_context
+from langsmith.utils import tracing_is_enabled
 
+from aether import demo
 from aether.demo import _parser, build_settings, main, run_demo
+from aether.eval.judge import JudgeError
 
 CORPUS = Path("data/golden/corpus")
 
@@ -53,3 +57,26 @@ def test_offline_demo_asks_and_names_the_slowest_stage(monkeypatch, tmp_path) ->
     slowest = max(enumerate(ask["stages"]), key=lambda pair: (pair[1]["elapsed_ms"], pair[0]))[1]
     assert ask["slowest_stage"] == slowest["stage"]
     assert "secret-should-not-be-used" not in (tmp_path / "report.json").read_text(encoding="utf-8")
+
+
+def test_offline_cli_disables_external_tracing(monkeypatch):
+    async def inspect_tracing(*args, **kwargs):
+        assert tracing_is_enabled() is False
+        return {"gate_passed": True}
+
+    monkeypatch.setattr(demo, "run_demo", inspect_tracing)
+    monkeypatch.setattr(demo, "_print", lambda *args: None)
+    with tracing_context(enabled=True):
+        main([])
+        assert tracing_is_enabled() is True
+
+
+def test_demo_judge_protocol_error_exits_two(monkeypatch, capsys):
+    async def failing_judge(*args, **kwargs):
+        raise JudgeError("invalid judge verdict")
+
+    monkeypatch.setattr(demo, "run_demo", failing_judge)
+    with pytest.raises(SystemExit) as caught:
+        main(["--eval", "answer"])
+    assert caught.value.code == 2
+    assert "demo failed: invalid judge verdict" in capsys.readouterr().err

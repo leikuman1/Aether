@@ -199,7 +199,7 @@ uv run aether-eval answer --judge openai --record --repeat 3 --fixtures data/eva
 `GET /v1/traces/{trace_id}` 返回同一份阶段表。重启后缓冲清空，用日志找回：
 
 ```bash
-uv run aether-api
+uv run aether-api 2> server.log
 # 另一个终端。响应头 X-Aether-Trace-Id 与 done.trace_id 相同。
 curl -sD /tmp/chat.headers -o /tmp/chat.sse -X POST http://127.0.0.1:8000/v1/chat \
   -H 'Content-Type: application/json' \

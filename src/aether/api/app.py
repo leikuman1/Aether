@@ -274,6 +274,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ServiceError as exc:
             error_code = exc.code
             raise
+        except Exception:
+            error_code = "service_unavailable"
+            raise
         finally:
             _store_simple_trace(
                 service,

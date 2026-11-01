@@ -226,7 +226,12 @@ async def _run_k6(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await process.communicate()
+    try:
+        stdout, stderr = await process.communicate()
+    except (Exception, asyncio.CancelledError):
+        await _stop(process)
+        summary_path.unlink(missing_ok=True)
+        raise
     stderr_text = stderr.decode("utf-8", errors="replace")
     try:
         if summary_path.is_file() and summary_path.stat().st_size:
@@ -369,7 +374,12 @@ async def run_load(
                 base_url = f"http://127.0.0.1:{port}"
                 report["base_url"] = base_url
                 async with httpx.AsyncClient(
-                    base_url=base_url, timeout=timeout, trust_env=False
+                    base_url=base_url,
+                    timeout=timeout,
+                    trust_env=False,
+                    limits=httpx.Limits(
+                        max_connections=concurrency, max_keepalive_connections=concurrency
+                    ),
                 ) as client:
                     await asyncio.wait_for(_ready(client, process), timeout=timeout)
                     ingest = await client.post(
@@ -396,7 +406,10 @@ async def run_load(
                             question=question,
                         )
                     report.update(parsed)
-                    report["sample_trace"] = await _sample_trace(client, question, log_path)
+                    try:
+                        report["sample_trace"] = await _sample_trace(client, question, log_path)
+                    except httpx.HTTPError as exc:
+                        report["errors_detail"].append(f"sample trace failed: {exc}")
             finally:
                 await _stop(process)
     sample = report["sample_trace"] or {}
@@ -445,7 +458,7 @@ def main(argv: list[str] | None = None) -> None:
                 question=args.question,
             )
         )
-    except (RuntimeError, OSError, json.JSONDecodeError, KeyError, httpx.HTTPError) as exc:
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError, httpx.HTTPError) as exc:
         parser.exit(2, f"load test failed: {exc}\n")
     text = json.dumps(report, ensure_ascii=False, indent=2)
     if args.output:

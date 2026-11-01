@@ -199,6 +199,9 @@ def test_unexpected_error_keeps_trace_header_and_access_status(settings, monkeyp
         assert response.status_code == 503
         trace_id = response.json()["error"]["trace_id"]
         assert response.headers["x-aether-trace-id"] == trace_id
+        traced = client.app.state.service.traces.get(trace_id)
+        assert traced["status"] == "error"
+        assert traced["error_code"] == response.json()["error"]["code"]
         access = [
             json.loads(record.message)
             for record in caplog.records
