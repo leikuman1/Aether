@@ -126,7 +126,7 @@ class LexicalJudge(BaseJudge):
     def _faithfulness(self, payload: dict) -> tuple[float, str]:
         answer = str(payload.get("answer", ""))
         cited = [str(item.get("text", "")) for item in payload.get("citations", [])]
-        body = CHUNK_ID_RE.sub(" ", answer)
+        body = CHUNK_ID_RE.sub(" ", answer.lower())
         lines = [line.strip() for line in body.splitlines() if line.strip()]
         if not lines or not cited:
             return 0.0, "answer or citations empty"

@@ -99,12 +99,13 @@ def test_citations_must_exist_and_be_retrieved(cited, retrieved, canonical, deci
     assert citation_flags(result, {c * 20 for c in canonical})["citation_ok"] is False
 
 
-async def test_lexical_judge_rejects_hallucination_and_irrelevance() -> None:
+@pytest.mark.parametrize("chunk_id", ["a" * 20, "A" * 20, "aA" * 10])
+async def test_lexical_judge_rejects_hallucination_and_irrelevance(chunk_id: str) -> None:
     judge = LexicalJudge()
     text = "BM25 controls term saturation and document length normalization."
     payload = {
         "question": "What does BM25 control?",
-        "answer": f"{text} [{'a' * 20}]",
+        "answer": f"{text} [{chunk_id}]",
         "citations": [{"chunk_id": "a" * 20, "text": text}],
     }
     assert (await judge.score("faithfulness", payload))[0] == 1.0
