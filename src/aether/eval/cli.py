@@ -133,9 +133,9 @@ def _write_report(report: dict, output: Path) -> None:
 
 def _run_answer(args: argparse.Namespace, settings: Settings) -> dict:
     if args.judge == "replay" and args.record:
-        raise SystemExit("--record replays nothing; record with --judge fake or openai")
+        raise ValueError("--record replays nothing; record with --judge fake or openai")
     if args.repeat < 1:
-        raise SystemExit("--repeat must be >= 1")
+        raise ValueError("--repeat must be >= 1")
     if args.judge == "replay":
         # 回放模式也固定生成/embedding 为 Fake，已有本机密钥不能意外触发外部请求。
         settings = settings.model_copy(update={"llm_api_key": "", "embedding_provider": "fake"})

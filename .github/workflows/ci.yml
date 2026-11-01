@@ -42,12 +42,16 @@ jobs:
 
   answer-eval:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     env:
       AETHER_EMBEDDING_PROVIDER: fake
       AETHER_LLM_API_KEY: ""
       AETHER_DENSE_BACKEND: sqlite-vec
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
