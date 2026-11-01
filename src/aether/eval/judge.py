@@ -78,7 +78,7 @@ def _norm(text: str) -> str:
 def _validate_score(value: object) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise JudgeError("judge score must be a finite number in [0, 1]")
-    if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+    if not 0.0 <= value <= 1.0 or not math.isfinite(value):
         raise JudgeError("judge score must be a finite number in [0, 1]")
     return float(value)
 
@@ -88,7 +88,7 @@ def parse_verdict(raw: str) -> tuple[float, str]:
     try:
         data = parse_json_object(raw)
         score = _validate_score(data.get("score"))
-    except (ValueError, TypeError, json.JSONDecodeError) as exc:
+    except (ValueError, TypeError, RecursionError) as exc:
         raise JudgeError(f"judge output is not {{score, reason}}: {raw[:120]!r}") from exc
     reason = str(data.get("reason", ""))
     return _validate_score(score), reason
@@ -213,18 +213,26 @@ class ReplayingJudge(BaseJudge):
     def _load(path: Path) -> dict[str, str]:
         if not path.is_file():
             raise JudgeError(f"judge fixtures not found: {path}")
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise JudgeError(f"judge fixtures are not UTF-8: {path}") from exc
+        except OSError as exc:
+            raise JudgeError(f"cannot read judge fixtures {path}: {exc}") from exc
         responses: dict[str, str] = {}
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        for number, line in enumerate(text.splitlines(), 1):
             if not line.strip():
                 continue
             try:
                 row = json.loads(line)
-            except json.JSONDecodeError as exc:
+            except (ValueError, RecursionError) as exc:
                 raise JudgeError(f"judge fixtures line {number} is not JSON") from exc
-            key = str(row.get("key", ""))
-            response = str(row.get("response", ""))
-            if not key or not response:
-                raise JudgeError(f"judge fixtures line {number} lacks key/response")
+            if not isinstance(row, dict):
+                raise JudgeError(f"judge fixtures line {number} must be a JSON object")
+            key = row.get("key")
+            response = row.get("response")
+            if not isinstance(key, str) or not key or not isinstance(response, str) or not response:
+                raise JudgeError(f"judge fixtures line {number} lacks key/response strings")
             if key in responses and responses[key] != response:
                 raise JudgeError(f"conflicting judge fixtures for key {key[:12]}")
             responses[key] = response
