@@ -298,10 +298,15 @@ def test_missing_index_validation_and_conflicts(api_settings):
         assert refused["abstain_reason"] == "human_rejected"
 
 
-async def test_timeout_releases_thread_and_busy_guards(api_settings):
+async def test_timeout_releases_thread_and_busy_guards(api_settings, monkeypatch):
+    # 从模型开始等待时触发真正的 asyncio deadline，避免慢磁盘在初始检查点前超时。
+    timeout_scope = asyncio.timeout(None)
+    real_timeout = asyncio.timeout
+
     class SlowModel(EvidenceBoundChatModel):
         async def _agenerate(self, messages, **kwargs):
-            await asyncio.sleep(5)
+            timeout_scope.reschedule(asyncio.get_running_loop().time() + 0.05)
+            await asyncio.Event().wait()
             return await super()._agenerate(messages, **kwargs)
 
     app = create_app(api_settings)
@@ -312,8 +317,14 @@ async def test_timeout_releases_thread_and_busy_guards(api_settings):
         await client.post("/v1/ingest", json={"corpus_dir": str(api_settings.data_dir / "corpus")})
         service = app.state.service
         service.llm = SlowModel()
-        api_settings.api_request_timeout = 0.1
-        failed = await client.post("/v1/chat", json={"question": QUESTION, "thread_id": "slow"})
+        api_settings.api_request_timeout = 30
+        with monkeypatch.context() as timing:
+            timing.setattr(asyncio, "timeout", lambda _: timeout_scope)
+            failed = await asyncio.wait_for(
+                client.post("/v1/chat", json={"question": QUESTION, "thread_id": "slow"}),
+                timeout=30,
+            )
+        assert asyncio.timeout is real_timeout
         assert failed.status_code == 504
         assert failed.json()["error"]["code"] == "request_timeout"
         assert not service.active_threads
