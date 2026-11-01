@@ -303,8 +303,10 @@ uv run python -m aether.api.loadtest --concurrency 20 --iterations 40 --output d
 
 ## 路线图
 
-M0 骨架 → M1 混合检索 → M2 纠错 Agent → M3 SSE 服务 → M4 评测门禁 → M5 观测与 v0.1.0。
-M0–M4 已在 main。这一版补上观测、压测和发布说明。v0.1.0 的 tag 等发布 PR 合并后再打。
+M0–M5 已完成并发布 `v0.1.0`（`main@9e2d9d2`）。下一里程碑 **M6：独立挑战集与可归因失败评测**
+仍在规划：冻结新查询，比较启用/关闭改写的同管线，报告安全性、完整证据覆盖、失败阶段与成本；
+真实模型未测时明确标记，不用 Fake 分数宣称语义收益。
+范围和验收见 [PLAN §5](PLAN.md#5-里程碑与验收) 与 [M6 验收协议](docs/m6-plan.md)；
 里程碑 Issue（各带验收标准）见 [Issues](https://github.com/leikuman1/Aether/issues)。
 
 ## 结构
