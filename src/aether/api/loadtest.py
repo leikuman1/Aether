@@ -402,7 +402,8 @@ async def run_load(
     sample = report["sample_trace"] or {}
     report["elapsed_s"] = round(time.perf_counter() - started, 3)
     report["ok"] = (
-        report.get("errors") == 0
+        report.get("exit_code") == 0
+        and report.get("errors") == 0
         and report.get("requests") == iterations
         and bool(sample.get("log_matches_endpoint"))
         and bool(sample.get("slowest_stage"))

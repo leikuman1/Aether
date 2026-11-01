@@ -1,7 +1,12 @@
 """k6 摘要解析与分位计算。不启动服务、不访问网络。"""
 
+import asyncio
 import json
+from unittest.mock import AsyncMock, Mock
 
+import pytest
+
+from aether.api import loadtest
 from aether.api.loadtest import load_k6_summary, parse_k6_summary, percentile
 
 
@@ -39,3 +44,48 @@ def test_parse_k6_summary_exposes_p50_p95_and_error_rate() -> None:
     assert parsed["latency_ms"]["p95"] == 20.0
     wrapped = load_k6_summary("Grafana banner\n" + json.dumps(summary) + "\nrunning\n")
     assert wrapped["metrics"]["http_reqs"]["values"]["count"] == 4
+
+
+@pytest.mark.parametrize("exit_code", [0, 99])
+async def test_load_report_requires_successful_driver_exit(monkeypatch, exit_code) -> None:
+    process = Mock()
+    process.stdout.readline = AsyncMock(return_value=b'{"port": 12345}\n')
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", AsyncMock(return_value=process))
+    monkeypatch.setattr(loadtest, "_k6_binary", lambda _: "k6")
+    monkeypatch.setattr(loadtest, "_ready", AsyncMock())
+    monkeypatch.setattr(loadtest, "_stop", AsyncMock())
+    monkeypatch.setattr(loadtest.httpx.AsyncClient, "post", AsyncMock(return_value=Mock()))
+    monkeypatch.setattr(
+        loadtest,
+        "_run_k6",
+        AsyncMock(
+            return_value=(
+                {"requests": 1, "errors": 0, "error_rate": 0.0, "exit_code": exit_code},
+                "",
+                exit_code,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        loadtest,
+        "_sample_trace",
+        AsyncMock(return_value={"log_matches_endpoint": True, "slowest_stage": "verify"}),
+    )
+    report = await loadtest.run_load(
+        concurrency=1,
+        iterations=1,
+        timeout=30,
+        driver="k6",
+        k6=None,
+        question="question",
+    )
+    assert report["ok"] is (exit_code == 0)
+
+
+@pytest.mark.parametrize("ok, expected_exit", [(True, 0), (False, 1)])
+def test_load_cli_propagates_report_status(monkeypatch, capsys, ok, expected_exit) -> None:
+    monkeypatch.setattr(loadtest, "run_load", AsyncMock(return_value={"ok": ok}))
+    with pytest.raises(SystemExit) as caught:
+        loadtest.main(["--driver", "builtin"])
+    assert caught.value.code == expected_exit
+    assert json.loads(capsys.readouterr().out)["ok"] is ok

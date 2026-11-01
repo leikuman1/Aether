@@ -16,6 +16,8 @@ from collections import OrderedDict
 from decimal import Decimal
 from typing import Any
 
+from starlette.requests import Request
+
 TRACE_CAPACITY = 256
 _SUMMARY_EVENTS = frozenset({"chat_complete", "request_complete", "http_access"})
 
@@ -173,10 +175,11 @@ class TraceMiddleware:
             scope["state"] = state
         state["trace_id"] = trace_id
         started = time.perf_counter()
-        status_holder = {"code": 500}
+        status_holder = {"code": 500, "started": False}
 
         async def send_wrapper(message):
             if message["type"] == "http.response.start":
+                status_holder["started"] = True
                 status_holder["code"] = int(message["status"])
                 headers = message.setdefault("headers", [])
                 if not any(key.lower() == b"x-aether-trace-id" for key, _value in headers):
@@ -185,6 +188,17 @@ class TraceMiddleware:
 
         try:
             await self.app(scope, receive, send_wrapper)
+        except Exception as exc:
+            # FastAPI 的通用异常处理器位于用户中间件外层。在这里发送响应，
+            # 才能让 trace 响应头与访问日志看到处理器实际返回的状态码。
+            if status_holder["started"]:
+                raise
+            app = scope.get("app")
+            handler = getattr(app, "exception_handlers", {}).get(Exception)
+            if handler is None:
+                raise
+            response = await handler(Request(scope, receive=receive), exc)
+            await response(scope, receive, send_wrapper)
         finally:
             elapsed_ms = round((time.perf_counter() - started) * 1000, 3)
             record = _ensure_http_trace(scope, trace_id, status_holder["code"], elapsed_ms)
