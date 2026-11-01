@@ -201,13 +201,14 @@ uv run aether-eval answer --judge openai --record --repeat 3 --fixtures data/eva
 ```bash
 uv run aether-api
 # 另一个终端。响应头 X-Aether-Trace-Id 与 done.trace_id 相同。
-curl -sD - -o /tmp/chat.sse -X POST http://127.0.0.1:8000/v1/chat \
+curl -sD /tmp/chat.headers -o /tmp/chat.sse -X POST http://127.0.0.1:8000/v1/chat \
   -H 'Content-Type: application/json' \
   -d '{"question":"BM25 的 k1 和 b 分别控制什么，切块方式变化后要注意哪些统计量？"}'
+TRACE_ID=$(awk 'tolower($1) == "x-aether-trace-id:" {gsub("\r", "", $2); print $2}' /tmp/chat.headers)
 # 进程仍在时，直接读出最慢阶段：
-curl -s http://127.0.0.1:8000/v1/traces/$TRACE_ID
+curl -s "http://127.0.0.1:8000/v1/traces/$TRACE_ID"
 # 进程重启后，从 JSON 日志定位（有 stage 行时以 stage 行为准）：
-uv run aether-trace --log server.log --trace-id $TRACE_ID
+uv run aether-trace --log server.log --trace-id "$TRACE_ID"
 ```
 
 `uv run aether-api` 会打开 JSON 日志。自己用 uvicorn 加载 `aether.api.app:app` 时设置
