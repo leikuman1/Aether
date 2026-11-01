@@ -47,9 +47,20 @@ def test_parse_k6_summary_exposes_p50_p95_and_error_rate() -> None:
     assert wrapped["metrics"]["http_reqs"]["values"]["count"] == 4
 
 
-@pytest.mark.parametrize("exit_code, sample_fails", [(0, False), (99, False), (0, True)])
+@pytest.mark.parametrize(
+    "exit_code, sample_error",
+    [
+        (0, None),
+        (99, None),
+        (0, httpx.ConnectError("sample connection failed")),
+        pytest.param(0, KeyError("stage"), id="missing-log-field"),
+        (0, ValueError("invalid elapsed_ms")),
+        (0, TypeError("invalid stage value")),
+        (0, OSError("log read failed")),
+    ],
+)
 async def test_load_report_requires_successful_driver_exit(
-    monkeypatch, exit_code, sample_fails
+    monkeypatch, exit_code, sample_error
 ) -> None:
     process = Mock()
     process.stdout.readline = AsyncMock(return_value=b'{"port": 12345}\n')
@@ -58,23 +69,24 @@ async def test_load_report_requires_successful_driver_exit(
     monkeypatch.setattr(loadtest, "_ready", AsyncMock())
     monkeypatch.setattr(loadtest, "_stop", AsyncMock())
     monkeypatch.setattr(loadtest.httpx.AsyncClient, "post", AsyncMock(return_value=Mock()))
+    metrics = {
+        "requests": 1,
+        "errors": 0,
+        "error_rate": 0.0,
+        "exit_code": exit_code,
+        "latency_ms": {"min": 1.0, "avg": 2.0, "p50": 2.0, "p95": 3.0, "max": 4.0},
+    }
     monkeypatch.setattr(
         loadtest,
         "_run_k6",
-        AsyncMock(
-            return_value=(
-                {"requests": 1, "errors": 0, "error_rate": 0.0, "exit_code": exit_code},
-                "",
-                exit_code,
-            )
-        ),
+        AsyncMock(return_value=(metrics, "", exit_code)),
     )
     monkeypatch.setattr(
         loadtest,
         "_sample_trace",
         AsyncMock(
             return_value={"log_matches_endpoint": True, "slowest_stage": "verify"},
-            side_effect=httpx.ConnectError("sample connection failed") if sample_fails else None,
+            side_effect=sample_error,
         ),
     )
     client_factory = Mock(wraps=loadtest.httpx.AsyncClient)
@@ -87,13 +99,15 @@ async def test_load_report_requires_successful_driver_exit(
         k6=None,
         question="question",
     )
-    assert report["ok"] is (exit_code == 0 and not sample_fails)
-    assert report["requests"] == 1
+    assert report["ok"] is (exit_code == 0 and sample_error is None)
+    assert {key: report[key] for key in metrics} == metrics
     limits = client_factory.call_args.kwargs["limits"]
     assert limits.max_connections == limits.max_keepalive_connections == 1
-    if sample_fails:
+    if sample_error is not None:
         assert report["sample_trace"] is None
-        assert "sample connection failed" in report["errors_detail"][0]
+        assert report["errors_detail"] == [f"sample trace failed: {sample_error}"]
+    else:
+        assert report["errors_detail"] == []
 
 
 @pytest.mark.parametrize("ok, expected_exit", [(True, 0), (False, 1)])

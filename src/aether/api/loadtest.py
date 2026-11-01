@@ -408,7 +408,7 @@ async def run_load(
                     report.update(parsed)
                     try:
                         report["sample_trace"] = await _sample_trace(client, question, log_path)
-                    except httpx.HTTPError as exc:
+                    except (httpx.HTTPError, OSError, ValueError, TypeError, KeyError) as exc:
                         report["errors_detail"].append(f"sample trace failed: {exc}")
             finally:
                 await _stop(process)
