@@ -1,0 +1,50 @@
+{
+  "trace_id": "c027034288c940f7b55b132c78dd2042",
+  "slowest_stage": "verify",
+  "slowest_elapsed_ms": 6.68,
+  "stages": [
+    {
+      "stage": "plan",
+      "elapsed_ms": 4.114,
+      "input_tokens": 231,
+      "output_tokens": 25,
+      "cost_usd": "0"
+    },
+    {
+      "stage": "retrieve",
+      "elapsed_ms": 2.706,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cost_usd": "0"
+    },
+    {
+      "stage": "grade",
+      "elapsed_ms": 1.666,
+      "input_tokens": 881,
+      "output_tokens": 134,
+      "cost_usd": "0"
+    },
+    {
+      "stage": "review",
+      "elapsed_ms": 1.171,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cost_usd": "0"
+    },
+    {
+      "stage": "generate",
+      "elapsed_ms": 0.888,
+      "input_tokens": 216,
+      "output_tokens": 114,
+      "cost_usd": "0"
+    },
+    {
+      "stage": "verify",
+      "elapsed_ms": 6.68,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cost_usd": "0"
+    }
+  ],
+  "cost_usd": "0"
+}

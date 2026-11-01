@@ -3,7 +3,9 @@
 import asyncio
 import json
 import logging
+import os
 import tempfile
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -16,6 +18,19 @@ from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from aether.api.accounting import Metrics, RequestUsage
+from aether.api.observe import (
+    TraceMiddleware,
+    TraceStore,
+    annotate_stage,
+    json_logs_enabled,
+    log_event,
+    make_trace,
+    usage_delta,
+    zero_usage,
+)
+from aether.api.observe import (
+    configure_logging as configure_json_logging,
+)
 from aether.config import Settings, get_settings
 from aether.graph.llm import create_chat_model
 from aether.graph.runner import open_index, read_thread, run_turn
@@ -86,6 +101,7 @@ class Service:
         self.settings = settings
         self.llm = create_chat_model(settings)
         self.metrics = Metrics()
+        self.traces = TraceStore()
         self.active_threads: set[str] = set()
         self.ingesting = False
 
@@ -165,6 +181,9 @@ def _event(name: str, data: dict) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    if json_logs_enabled(app.state.settings.json_logs):
+        # uvicorn 会在导入后重置 logging；放到 lifespan 里，handler 才能留下来。
+        configure_json_logging()
     await asyncio.to_thread(_check_storage, app.state.settings.data_dir)
     app.state.service = Service(app.state.settings)
     yield
@@ -177,15 +196,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(ServiceError)
     async def service_error(request: Request, exc: ServiceError) -> JSONResponse:
+        trace_id = _request_trace_id(request)
+        log_event(
+            logger,
+            "service_error",
+            level=logging.WARNING,
+            trace_id=trace_id,
+            code=exc.code,
+            status_code=exc.status,
+            cost_usd="0",
+        )
         return JSONResponse(
             status_code=exc.status,
-            content={"error": {"code": exc.code, "trace_id": uuid4().hex}},
+            content={"error": {"code": exc.code, "trace_id": trace_id}},
         )
 
     @app.exception_handler(Exception)
     async def internal_error(request: Request, exc: Exception) -> JSONResponse:
-        trace_id = uuid4().hex
-        logger.error("service_error trace_id=%s type=%s", trace_id, type(exc).__name__)
+        trace_id = _request_trace_id(request)
+        log_event(
+            logger,
+            "service_error",
+            level=logging.ERROR,
+            trace_id=trace_id,
+            code="service_unavailable",
+            error_type=type(exc).__name__,
+            cost_usd="0",
+        )
         return JSONResponse(
             status_code=503,
             content={"error": {"code": "service_unavailable", "trace_id": trace_id}},
@@ -225,7 +262,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     async def ingest(body: IngestRequest, request: Request) -> dict:
         """全量原子重建索引；corpus_dir 必须位于 AETHER_API_INGEST_ROOT 下。"""
-        return await request.app.state.service.ingest(body)
+        service: Service = request.app.state.service
+        trace_id = _request_trace_id(request)
+        started = time.perf_counter()
+        error_code: str | None = None
+        succeeded = False
+        try:
+            result = await service.ingest(body)
+            succeeded = True
+            return result
+        except ServiceError as exc:
+            error_code = exc.code
+            raise
+        except Exception:
+            error_code = "service_unavailable"
+            raise
+        finally:
+            _store_simple_trace(
+                service,
+                trace_id=trace_id,
+                method="POST",
+                path="/v1/ingest",
+                stage="ingest",
+                elapsed_ms=(time.perf_counter() - started) * 1000,
+                status="success" if succeeded else "error",
+                error_code=error_code,
+            )
 
     @app.get("/v1/threads/{thread_id}", tags=["chat"])
     async def thread(thread_id: ThreadId, request: Request) -> dict:
@@ -266,8 +328,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "X-Aether-Trace-Id": {"schema": {"type": "string"}},
                 },
                 "content": {"text/event-stream": {}},
-                "description": "SSE: stage {stage,elapsed_ms}; token {text}; "
-                "done {TurnResult,usage,trace_id}。"
+                "description": "SSE: stage {stage,elapsed_ms,input_tokens,output_tokens,cost_usd}; "
+                "token {text}; done {TurnResult,usage,trace_id,slowest_stage,slowest_elapsed_ms}。"
                 "图执行及引用校验完成后发送，响应头为最终 usage；token 是验证后回答的文本分块。",
             },
             409: {"description": "thread 正忙或中断状态冲突"},
@@ -279,13 +341,60 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def chat(body: ChatRequest, request: Request) -> StreamingResponse | JSONResponse:
         service: Service = request.app.state.service
         usage = RequestUsage(settings)
-        trace_id = uuid4().hex
+        trace_id = _request_trace_id(request)
         stages: list[dict] = []
+        previous = zero_usage()
+        started = time.perf_counter()
 
         async def stage(name: str, elapsed_ms: float) -> None:
-            stages.append({"stage": name, "elapsed_ms": round(elapsed_ms, 3)})
+            nonlocal previous
+            current = usage.snapshot()
+            item = annotate_stage(name, elapsed_ms, usage_delta(previous, current))
+            previous = current
+            stages.append(item)
             service.metrics.stage(name, elapsed_ms)
-            logger.info("stage trace_id=%s stage=%s elapsed_ms=%.3f", trace_id, name, elapsed_ms)
+            log_event(logger, "stage", trace_id=trace_id, thread_id=body.thread_id, **item)
+
+        def commit(success: bool, error_code: str | None) -> tuple[dict, dict]:
+            final_usage = usage.snapshot()
+            recorded = list(stages)
+            if not recorded:
+                item = annotate_stage(
+                    "request",
+                    (time.perf_counter() - started) * 1000,
+                    usage_delta(previous, final_usage),
+                )
+                recorded.append(item)
+                log_event(logger, "stage", trace_id=trace_id, thread_id=body.thread_id, **item)
+            service.metrics.record(final_usage, success=success)
+            record = make_trace(
+                trace_id=trace_id,
+                method="POST",
+                path="/v1/chat",
+                status="success" if success else "error",
+                stages=recorded,
+                usage=final_usage,
+                thread_id=body.thread_id,
+                error_code=error_code,
+            )
+            service.traces.put(record)
+            log_event(
+                logger,
+                "chat_complete",
+                level=logging.INFO if success else logging.ERROR,
+                trace_id=trace_id,
+                thread_id=body.thread_id,
+                status=record["status"],
+                error_code=error_code,
+                slowest_stage=record["slowest_stage"],
+                slowest_elapsed_ms=record["slowest_elapsed_ms"],
+                input_tokens=final_usage["input_tokens"],
+                output_tokens=final_usage["output_tokens"],
+                total_tokens=final_usage["total_tokens"],
+                cost_usd=final_usage["cost_usd"],
+                usage_source=final_usage["source"],
+            )
+            return final_usage, record
 
         error: ServiceError | None = None
         try:
@@ -317,13 +426,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError:
             error = ServiceError(409, "thread_state_conflict")
         except asyncio.CancelledError:
-            service.metrics.record(usage.snapshot(), success=False)
+            commit(False, "cancelled")
             raise
         except Exception as exc:
-            logger.error("chat_error trace_id=%s type=%s", trace_id, type(exc).__name__)
+            log_event(
+                logger,
+                "chat_error",
+                level=logging.ERROR,
+                trace_id=trace_id,
+                error_type=type(exc).__name__,
+                cost_usd=usage.snapshot()["cost_usd"],
+            )
             error = ServiceError(503, "service_unavailable")
-        final_usage = usage.snapshot()
-        service.metrics.record(final_usage, success=error is None)
+        final_usage, record = commit(error is None, None if error is None else error.code)
         headers = _headers(final_usage, trace_id, body.thread_id)
         if error is not None:
             return JSONResponse(
@@ -340,7 +455,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             for offset in range(0, len(answer), size):
                 yield _event("token", {"text": answer[offset : offset + size]})
                 await asyncio.sleep(0)
-            yield _event("done", {**result, "usage": final_usage, "trace_id": trace_id})
+            yield _event(
+                "done",
+                {
+                    **result,
+                    "usage": final_usage,
+                    "trace_id": trace_id,
+                    "slowest_stage": record["slowest_stage"],
+                    "slowest_elapsed_ms": record["slowest_elapsed_ms"],
+                },
+            )
 
         return StreamingResponse(
             events(),
@@ -348,13 +472,82 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             headers={**headers, "Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
+    @app.get(
+        "/v1/traces/{trace_id}",
+        tags=["meta"],
+        responses={404: {"description": "trace 不在本进程缓冲中（已重启或被挤出）"}},
+    )
+    async def read_trace(trace_id: str, request: Request) -> dict:
+        """按 trace_id 返回阶段时延与成本，并标出最慢阶段。缓冲仅在本进程。"""
+        if len(trace_id) != 32 or any(char not in "0123456789abcdef" for char in trace_id):
+            raise ServiceError(404, "trace_not_found")
+        record = request.app.state.service.traces.get(trace_id)
+        if record is None:
+            raise ServiceError(404, "trace_not_found")
+        return record
+
+    app.add_middleware(TraceMiddleware)
     return app
 
 
 app = create_app()
 
 
+def _request_trace_id(request: Request) -> str:
+    trace_id = getattr(request.state, "trace_id", None)
+    if isinstance(trace_id, str) and trace_id:
+        return trace_id
+    return uuid4().hex
+
+
+def _store_simple_trace(
+    service: Service,
+    *,
+    trace_id: str,
+    method: str,
+    path: str,
+    stage: str,
+    elapsed_ms: float,
+    status: str,
+    error_code: str | None,
+) -> None:
+    item = annotate_stage(
+        stage,
+        elapsed_ms,
+        {"input_tokens": 0, "output_tokens": 0, "cost_usd": "0"},
+    )
+    record = make_trace(
+        trace_id=trace_id,
+        method=method,
+        path=path,
+        status=status,
+        stages=[item],
+        usage=zero_usage(),
+        error_code=error_code,
+    )
+    service.traces.put(record)
+    log_event(logger, "stage", trace_id=trace_id, **item)
+    log_event(
+        logger,
+        "request_complete",
+        level=logging.INFO if status == "success" else logging.WARNING,
+        trace_id=trace_id,
+        path=path,
+        status=status,
+        error_code=error_code,
+        slowest_stage=record["slowest_stage"],
+        slowest_elapsed_ms=record["slowest_elapsed_ms"],
+        input_tokens=0,
+        output_tokens=0,
+        total_tokens=0,
+        cost_usd="0",
+        usage_source="none",
+    )
+
+
 def main() -> None:
+    # 模块导入时已经 create_app()；用环境变量让随后的 lifespan 打开 JSON 日志。
+    os.environ["AETHER_JSON_LOGS"] = "1"
     uvicorn.run("aether.api.app:app", host="127.0.0.1", port=8000)
 
 

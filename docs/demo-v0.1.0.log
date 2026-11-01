@@ -1,0 +1,13 @@
+{"event":"stage","trace_id":"5ae0c692ba584befb881b23c6fa2b2f5","stage":"ingest","elapsed_ms":69.596,"input_tokens":0,"output_tokens":0,"cost_usd":"0"}
+{"event":"request_complete","trace_id":"5ae0c692ba584befb881b23c6fa2b2f5","path":"/v1/ingest","status":"success","error_code":null,"slowest_stage":"ingest","slowest_elapsed_ms":69.596,"input_tokens":0,"output_tokens":0,"total_tokens":0,"cost_usd":"0","usage_source":"none"}
+{"event":"http_access","trace_id":"5ae0c692ba584befb881b23c6fa2b2f5","method":"POST","path":"/v1/ingest","status_code":200,"elapsed_ms":70.509,"cost_usd":"0","total_tokens":0,"usage_source":"none","slowest_stage":"ingest","slowest_elapsed_ms":69.596}
+{"event":"stage","trace_id":"c027034288c940f7b55b132c78dd2042","thread_id":"demo","stage":"plan","elapsed_ms":4.114,"input_tokens":231,"output_tokens":25,"cost_usd":"0"}
+{"event":"stage","trace_id":"c027034288c940f7b55b132c78dd2042","thread_id":"demo","stage":"retrieve","elapsed_ms":2.706,"input_tokens":0,"output_tokens":0,"cost_usd":"0"}
+{"event":"stage","trace_id":"c027034288c940f7b55b132c78dd2042","thread_id":"demo","stage":"grade","elapsed_ms":1.666,"input_tokens":881,"output_tokens":134,"cost_usd":"0"}
+{"event":"stage","trace_id":"c027034288c940f7b55b132c78dd2042","thread_id":"demo","stage":"review","elapsed_ms":1.171,"input_tokens":0,"output_tokens":0,"cost_usd":"0"}
+{"event":"stage","trace_id":"c027034288c940f7b55b132c78dd2042","thread_id":"demo","stage":"generate","elapsed_ms":0.888,"input_tokens":216,"output_tokens":114,"cost_usd":"0"}
+{"event":"stage","trace_id":"c027034288c940f7b55b132c78dd2042","thread_id":"demo","stage":"verify","elapsed_ms":6.68,"input_tokens":0,"output_tokens":0,"cost_usd":"0"}
+{"event":"chat_complete","trace_id":"c027034288c940f7b55b132c78dd2042","thread_id":"demo","status":"success","error_code":null,"slowest_stage":"verify","slowest_elapsed_ms":6.68,"input_tokens":1328,"output_tokens":273,"total_tokens":1601,"cost_usd":"0","usage_source":"estimated"}
+{"event":"http_access","trace_id":"c027034288c940f7b55b132c78dd2042","method":"POST","path":"/v1/chat","status_code":200,"elapsed_ms":42.161,"cost_usd":"0","total_tokens":1601,"usage_source":"estimated","slowest_stage":"verify","slowest_elapsed_ms":6.68}
+{"event":"stage","trace_id":"b4e872a3cf4746ed9f82d07ff54ce5fa","stage":"http","elapsed_ms":0.282,"input_tokens":0,"output_tokens":0,"cost_usd":"0"}
+{"event":"http_access","trace_id":"b4e872a3cf4746ed9f82d07ff54ce5fa","method":"GET","path":"/v1/traces/c027034288c940f7b55b132c78dd2042","status_code":200,"elapsed_ms":0.282,"cost_usd":"0","total_tokens":0,"usage_source":"none","slowest_stage":"http","slowest_elapsed_ms":0.282}

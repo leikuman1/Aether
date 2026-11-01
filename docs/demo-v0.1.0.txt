@@ -1,0 +1,12 @@
+mode=offline embedding=fake llm_configured=false
+ingest docs=24 chunks=72
+ask decision=answer verified=true thread_id=demo trace_id=c027034288c940f7b55b132c78dd2042
+slowest_stage=verify slowest_elapsed_ms=6.68 cost_usd=0 tokens=1601
+stages plan=4.114 retrieve=2.706 grade=1.666 review=1.171 generate=0.888 verify=6.68
+answer BM25 词法检索 > Parameters and corpus
+BM25 的 k1 控制词频饱和速度，b 调整文档长度归一化强度。参数含义与实现细节需要一起核对，不应把单个语料上的最佳值视为普适常量。文档切块改变长度分布与文档频率，重建语料索引后应重新记录统计信息，并在固定标注查询上检查排名变化，避免把数据变化误判成算法改进。 [0ddf153601bf76062670]
+eval retrieval chunker=fixed-400-64 hybrid_recall@5=0.9750 bm25_recall@5=0.9750 dense_recall@5=0.8667
+eval retrieval chunker=markdown-480 hybrid_recall@5=0.9833 bm25_recall@5=0.9833 dense_recall@5=0.7417
+eval retrieval gate=PASS
+gate=PASS elapsed_s=0.657
+report=docs/demo-v0.1.0.json

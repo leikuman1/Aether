@@ -118,7 +118,9 @@ async def run_turn(
         "callbacks": callbacks or [],
     }
     async with AsyncSqliteSaver.from_conn_string(str(path)) as saver:
-        compiled = build_graph(llm, searcher, retrieval_k=retrieval_k).compile(checkpointer=saver)
+        compiled = build_graph(
+            llm, searcher, retrieval_k=retrieval_k, on_stage_error=on_stage
+        ).compile(checkpointer=saver)
         snapshot = await compiled.aget_state(config)
         # 普通任务取消也会留下 next；只有显式 interrupt 才要求人工 resume。
         # 新问题覆盖未完成轮的临时字段，已完成轮的 messages 仍由 reducer 保留。

@@ -14,6 +14,27 @@
 - **服务化**：全异步 FastAPI，SSE 流式，会话跨进程恢复，逐请求 token/成本核算
 - **CI 无密钥**：LLM 调用走 fixtures 回放，`uv run pytest` 离线可跑
 
+## 架构
+
+```mermaid
+flowchart TD
+  client[Client] --> api[FastAPI async]
+  api --> chat["POST /v1/chat"]
+  api --> ingest["POST /v1/ingest"]
+  api --> meta["/healthz /readyz /metrics /v1/traces/trace_id"]
+  chat --> graph["LangGraph plan to verify"]
+  graph --> retrieve[retrieve]
+  retrieve --> hybrid["BM25 x dense RRF"]
+  ingest --> index[(SQLite index)]
+  hybrid --> index
+  chat --> logs["JSON log: trace_id, stage latency, cost"]
+  chat --> buffer["In-process trace buffer"]
+  meta --> buffer
+```
+
+图的节点顺序是 `plan → retrieve → grade →（证据不足则有界 rewrite）→ review → generate → verify → answer | abstain`。
+SSE 在整张图和引用校验完成之后才发出，阶段时延是节点耗时回放。细节见 ADR-005 与 ADR-007。
+
 ## 快速开始
 
 ```bash
@@ -23,6 +44,7 @@ uv run ruff check . && uv run ruff format --check .      # lint + 格式
 
 cp .env.example .env                                     # 可选：填 AETHER_LLM_API_KEY 启用真实 LLM
 uv run aether-api                                        # 启动服务 → http://127.0.0.1:8000/docs
+uv run aether-demo                                       # 无密钥：摄取 → 提问 → 检索评测
 ```
 
 ## M1：可复现的检索演示
@@ -169,6 +191,102 @@ uv run aether-eval answer --judge openai --record --repeat 3 --fixtures data/eva
 黄金集按离线可回答性选择，存在选择偏差；数据来源、稳定性实验与局限见
 [data/golden/README.md](data/golden/README.md) 和 [docs/decisions.md](docs/decisions.md)。
 
+## M5：观测、压测与 v0.1.0
+
+每条 HTTP 响应都带 `X-Aether-Trace-Id`。聊天的每个图节点写一行 JSON 日志，字段包括
+`trace_id`、`stage`、`elapsed_ms`、`input_tokens`、`output_tokens`、`cost_usd`。
+请求结束再写 `chat_complete`，标出 `slowest_stage`。进程内保留最近 256 条 trace，
+`GET /v1/traces/{trace_id}` 返回同一份阶段表。重启后缓冲清空，用日志找回：
+
+```bash
+uv run aether-api 2> server.log
+# 另一个终端。响应头 X-Aether-Trace-Id 与 done.trace_id 相同。
+curl -sD /tmp/chat.headers -o /tmp/chat.sse -X POST http://127.0.0.1:8000/v1/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"BM25 的 k1 和 b 分别控制什么，切块方式变化后要注意哪些统计量？"}'
+TRACE_ID=$(awk 'tolower($1) == "x-aether-trace-id:" {gsub("\r", "", $2); print $2}' /tmp/chat.headers)
+# 进程仍在时，直接读出最慢阶段：
+curl -s "http://127.0.0.1:8000/v1/traces/$TRACE_ID"
+# 进程重启后，从 JSON 日志定位（有 stage 行时以 stage 行为准）：
+uv run aether-trace --log server.log --trace-id "$TRACE_ID"
+```
+
+`uv run aether-api` 会打开 JSON 日志。自己用 uvicorn 加载 `aether.api.app:app` 时设置
+`AETHER_JSON_LOGS=1`。成本只含已完成的对话模型调用，口径与 M3 相同；摄取阶段的
+`cost_usd` 固定为 0，因为 embedding 不进这本账。离线 Fake 的单价也是 0，
+`usage_source=estimated` 表示 token 按 UTF-8 字节估算。
+
+### 一键演示
+
+```bash
+uv run aether-demo
+uv run aether-demo --eval all          # 再加上 agent 门禁与答案门禁，更慢
+uv run aether-demo --live              # 使用当前 AETHER_LLM_* / embedding；没有密钥会退出
+uv run aether-demo --live --judge openai
+```
+
+默认强制空密钥和 Fake embedding，不读本机密钥，CI 可以直接跑。
+`--live` 才把提问和摄取交给 Settings 里的 provider。答案 judge 默认仍是离线 Fake，
+只有显式 `--judge openai` 才调用外部 judge。
+
+本次离线实录（Linux / Python 3.12.3，2026-11-01）：摄取 24 篇 / 72 chunk，
+提问 `decision=answer`，`trace_id=c027034288c940f7b55b132c78dd2042` 的最慢阶段是
+**verify 6.68 ms**，检索门禁 PASS（markdown hybrid recall@5 = 0.9833）。
+`aether-trace` 从日志得到同一个阶段。全文：
+
+- 终端 stdout：[docs/demo-v0.1.0.txt](docs/demo-v0.1.0.txt)
+- JSON 日志：[docs/demo-v0.1.0.log](docs/demo-v0.1.0.log)
+- 日志定位结果：[docs/demo-v0.1.0.trace.json](docs/demo-v0.1.0.trace.json)
+- 摘要 JSON：[docs/demo-v0.1.0.json](docs/demo-v0.1.0.json)
+
+重新生成（不要提交带密钥的 `--live` 输出）：
+
+```bash
+uv run aether-demo --output docs/demo-v0.1.0.json > docs/demo-v0.1.0.txt 2> docs/demo-v0.1.0.log
+TRACE=$(awk -F'trace_id=' '/^ask /{print $2}' docs/demo-v0.1.0.txt)
+uv run aether-trace --log docs/demo-v0.1.0.log --trace-id "$TRACE" > docs/demo-v0.1.0.trace.json
+```
+
+### 界面截图
+
+v0.1.0 没有 Web 控制台。占位：若要截图，运行 `uv run aether-demo` 后截取打印了
+`slowest_stage=` 的终端，或启动 `uv run aether-api` 后打开 <http://127.0.0.1:8000/docs>，
+对 `GET /v1/traces/{trace_id}` 发一次请求再截图。把图片存成 `docs/demo-screenshot.png`
+并替换本段。在那之前，以上终端实录就是演示记录。
+
+### 压测
+
+工具是 **k6 1.3.0**（`scripts/k6/chat.js`）。hey 不适用：请求体里的 `thread_id` 必须每次不同，
+否则第二条返回 409。k6 用 `shared-iterations`，20 个 VU 共 40 次 `POST /v1/chat`。
+没有 k6 时 `python -m aether.api.loadtest --driver builtin` 用 httpx 测同一服务，但下面的数字来自 k6。
+
+| 项 | 值 |
+|---|---:|
+| 并发 | 20 VU |
+| 请求数 | 40 |
+| 错误率 | **0**（0/40，HTTP 非 200 或连接失败） |
+| p50 | **511.638 ms** |
+| p95 | **1152.648 ms** |
+| 平均 | 555.837 ms |
+| 最小 / 最大 | 28.602 ms / 1161.829 ms |
+
+环境：Linux 6.12.94+、Python 3.12.3、k6 1.3.0、Fake 对话模型、Fake embedding、sqlite-vec。
+记录时间 2026-11-01。延迟是客户端看到的整段 SSE（含排队和读完正文），不是模型 provider 延迟，
+也不是单个图节点的耗时。p50/p95 保留三位小数，未舍入的值在
+[docs/loadtest-v0.1.0.json](docs/loadtest-v0.1.0.json)。k6 的 `http_req_failed.passes` 才是失败次数，
+`fails` 反而是成功次数；报告里的 `errors` / `error_rate` 已经按失败次数填写，这次都是 0。
+
+压测循环结束后另打了一枪样本：`trace_id=1e7745f953074546a9421cf9200054fa` 的端点与日志都指向
+**verify / 7.483 ms**。这是节点耗时，不是上表的排队后 p50。原始 JSON 与复现步骤见
+[docs/loadtest.md](docs/loadtest.md)。
+
+```bash
+uv run python -m aether.api.loadtest --concurrency 20 --iterations 40 --output docs/loadtest-v0.1.0.json
+```
+
+这些数字对应 PLAN 的反玩具三问：有 p50/p95/错误率，并且任意请求能凭 `trace_id` 复现最慢阶段。
+它们不是跨机器 SLO。发布说明见 [CHANGELOG.md](CHANGELOG.md)。tag 在合并之后打，不在这个分支上推送。
+
 ## 配置
 
 环境变量前缀 `AETHER_`，完整见 [.env.example](.env.example)：
@@ -178,20 +296,23 @@ uv run aether-eval answer --judge openai --record --repeat 3 --fixtures data/eva
 | `AETHER_LLM_BASE_URL` | 智谱 OpenAI 兼容端点 | 任何 OpenAI 协议服务（GLM/OpenAI/DeepSeek/vLLM） |
 | `AETHER_LLM_MODEL` | `glm-4.6` | 对话模型 |
 | `AETHER_LLM_API_KEY` | 空 | 空 = 不发起外部调用（测试/演练模式） |
+| `AETHER_JSON_LOGS` | 关 | `1` 时把 `aether.*` 打成一行一个 JSON。`uv run aether-api` 会强制打开 |
 | `AETHER_AGENT_REWRITE_BUDGET` | `2` | 证据不足时的查询改写次数 |
 | `AETHER_AGENT_MIN_SUPPORT_TERMS` | `4` | 引用原文至少要覆盖的问题内容词数 |
 | `AETHER_DATA_DIR` | `./data` | 索引、会话、评测产物 |
 
 ## 路线图
 
-M1 混合检索引擎 → M2 纠错 Agent 图 → M3 SSE 服务层 → M4 评测门禁 → M5 观测与发布。
-M3 已落地：异步服务、校验后 SSE、跨进程会话恢复、usage 核算与 20 并发门禁。
+M0 骨架 → M1 混合检索 → M2 纠错 Agent → M3 SSE 服务 → M4 评测门禁 → M5 观测与 v0.1.0。
+M0–M4 已在 main。这一版补上观测、压测和发布说明。v0.1.0 的 tag 等发布 PR 合并后再打。
 里程碑 Issue（各带验收标准）见 [Issues](https://github.com/leikuman1/Aether/issues)。
 
 ## 结构
 
 ```
-src/aether/         # api/ 服务层；graph/ Agent 状态机；retrieval/ 混合检索；eval/ 评测（M1+ 逐步落地）
+src/aether/         # api/ 服务与观测；graph/ Agent；retrieval/ 混合检索；eval/ 评测；demo.py
+scripts/k6/         # 聊天压测脚本
 tests/              # 无网络、无密钥
-.github/workflows/  # CI：ruff + pytest
+docs/               # 决策、压测与演示实录
+.github/workflows/  # CI：ruff + pytest + 离线 demo + 质量门禁
 ```
