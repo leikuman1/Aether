@@ -158,3 +158,50 @@ Windows 11 / Python 3.12.1 的记录：20/20、0 错误/超时、p50=1287.348ms�
 索引打开在工作线程中执行，取消请求仍等待线程归还连接并关闭 searcher/embedder 后才释放占用；
 因此超时响应可能包含必要的清理时间，不声称能强杀磁盘 I/O。资源回归测试用线程屏障验证此所有权。
 CI 在 Windows/Linux 运行离线全量测试及真实 TCP 冒烟，将报告随评测 artifacts 保留。
+
+## ADR-006：M4 答案门禁、judge 回放与稳定性边界
+
+日期：2026-11-01。不增加依赖，不改服务层。答案评测复用现有检索与 `run_turn`，
+每条答案实际执行整张图，再由独立确定性检查验证引用 chunk 存在于 canonical 语料、
+属于本轮检索，正文引用与结果 citations 一致；要求通过率 100%。无引用的弃答不能
+伪造答案质量：另要求可回答率 ≥0.8、标准引用覆盖率 ≥0.8、样本数 ≥30。
+faithfulness 与 answer-relevance 对已回答题分别取宏平均，阈值均为 0.8。
+无效引用直接记两个维度 0 分且确定性门禁失败，不调用 judge、不因查找不存在 chunk 崩溃。
+
+42 条黄金题从 M1 已冻结标签筛选（exact/paraphrase/multi/contrast=10/10/13/9），
+标准答案复用证据原文；筛选使用当前 Fake 管线的完整 gold 覆盖，存在选择偏差，
+这批数据是回归集，不是独立保留集。词面代理的相关性定义也经过同集观察，不能宣称泛化。
+CI 的 84 条 fixtures 由词面 Fake judge 录制，来源字段明确标记；它们不是供应商模型实测。
+真实 LLMJudge 走 Settings 中 OpenAI 兼容端点，固定 rubric、强制 temperature=0，
+测试以 FakeListChatModel 替代调用，既验证协议也验证录制/回放，不调用真实网络。
+温度 0 仅减少采样变化，不保证供应商确定性；本次没有真实 judge 稳定性结论。
+
+两维度 rubric 内容与完整输入共同参与 prompt SHA-256：缺 fixture 退出 2，不做自动回退；
+NaN/Infinity、布尔值、数字字符串、越界分数全部拒绝，不能夹成及格分。
+`--record --repeat N` 保存首轮 verdict，与报告采用的首轮一致，后续轮用于测偏差。
+回放模式强制清空生成密钥并使用离线 embedding，避免本机 .env 意外引入外部请求。
+
+稳定性实验（Windows 11 / Python 3.12.1 / sqlite-vec，2026-11-01）：
+
+| judge 来源 | 输入数量 | 每输入重复 | faithfulness 均值 | relevance 均值 | 两维度最大偏差 |
+|---|---:|---:|---:|---:|---:|
+| 词面 Fake judge | 42 | 3 | 1.000000 | 0.913101 | 0 / 0 |
+| 入库 fixtures 回放 | 42 | 3 | 1.000000 | 0.913101 | 0 / 0 |
+
+逐输入相对首轮的最大绝对差作为波动指标；对确定性 Fake/回放要求精确 0。
+真实 judge 后续实验应保留模型版本和原始报告，以最大偏差 ≤0.05 为建议接受范围，
+本次并未验证该建议。回放单次本机墙钟约 3.97 秒（含 CLI 启动和整张图），
+CI 评测步骤设置 `timeout-minutes: 3`，依赖安装单独计时。
+
+```bash
+uv run aether-eval answer --judge fake --repeat 3 --gate --output data/eval/answer_fake_stability.json
+uv run aether-eval answer --judge replay --repeat 3 --gate --baseline data/golden/answer_baseline.jsonl
+uv run pytest -q
+uv run ruff check .
+uv run ruff format --check .
+```
+
+报告保存完整答案/引用/逐题原因、rubric 指纹、数据指纹、配置和阈值；历史 JSONL 追加
+指标摘要，第二次运行对比上一条；`--baseline` 支持完整 JSON 报告或 JSONL 最后一条，
+CI 使用入库基准以便全新 checkout 也能输出差值。对比仅报告退步项，硬门槛决定退出码；
+历史不自动与 GitHub 跨运行合并，Actions artifacts 保留该次报告与历史。更新基准需评审。

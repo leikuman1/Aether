@@ -134,6 +134,41 @@ CI 在 Windows/Linux 都运行该脚本，保存原始 JSON artifacts。
 断言结构化 `503 provider_unavailable`、无异常原文/堆栈/草稿泄漏；另覆盖 504 超时、容量与会话冲突、
 摄取失败保留旧库、非零价格及 usage 精确对账。重启集成测试用三个独立解释器经 API 完成暂停、恢复、续聊。
 
+## M4：答案质量门禁
+
+```bash
+uv run aether-eval answer --gate
+uv run aether-eval answer --judge replay --gate --repeat 3 --baseline data/golden/answer_baseline.jsonl
+uv run pytest -q
+uv run ruff check .
+uv run ruff format --check .
+```
+
+`data/golden/answer.jsonl` 包含 42 条带标准答案、证据原文和 chunk ID 的问题。
+评测实际执行检索与 Agent 图，再确定性验证每个引用的 chunk 存在且被本轮检索，
+引用通过率必须 **100%**；faithfulness 与 answer-relevance 均值必须 **≥0.80**，
+可回答率与标准引用覆盖率也必须 ≥0.80。`--gate` 未达门槛退出 1，缺失 fixture 或
+judge 协议错误退出 2。独立 CI job `answer-eval` 回放入库 fixtures，评测步骤限时 3 分钟。
+
+默认输出 `data/eval/answer.json`，历史指标追加到 `data/eval/answer_history.jsonl`。
+第二次运行自动对比上一条历史；`--baseline` 可指定完整 JSON 报告或历史 JSONL，
+CI 用入库基准，报告包含逐指标差值与退步项。CI artifacts 保存完整报告及历史。
+
+```bash
+# 离线重录（覆盖目标 fixtures，修改 rubric/管线后需要人工复核分数）
+uv run aether-eval answer --judge fake --record --fixtures data/golden/answer_judge_fixtures.jsonl
+# 真实 OpenAI 兼容 judge：显式配置 AETHER_LLM_* 后执行；不在测试/CI 调用
+uv run aether-eval answer --judge openai --record --repeat 3 --fixtures data/eval/live_judge.jsonl
+```
+
+真实 judge 使用固定 rubric 与强制 temperature=0；`--repeat` 测同输入重复评分的最大偏差。
+回放使用完整 prompt 的 SHA-256，任何缺项立即失败；回放模式还强制生成与 embedding 为 Fake，
+即使本机配置过密钥也不会调用 provider。入库的 84 条评分来自**词面 Fake judge**，不是生产模型
+录制：本地 faithfulness=1.0000、answer-relevance=0.9131，重复 3 次最大偏差=0。
+词面分数和确定性回放只能证明离线回归，不证明真实模型语义质量或真实 judge 稳定性。
+黄金集按离线可回答性选择，存在选择偏差；数据来源、稳定性实验与局限见
+[data/golden/README.md](data/golden/README.md) 和 [docs/decisions.md](docs/decisions.md)。
+
 ## 配置
 
 环境变量前缀 `AETHER_`，完整见 [.env.example](.env.example)：
