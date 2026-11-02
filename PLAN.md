@@ -5,7 +5,7 @@
 
 - 仓库：<https://github.com/leikuman1/Aether>
 - 技术栈：Python 3.12 / uv / FastAPI / LangGraph / rank-bm25 + sqlite-vec
-- 状态：M0–M5 已完成并发布 `v0.1.0`（`main@9e2d9d2`）；M6 规划中，见 [§5](#5-里程碑与验收)
+- 状态：M0–M5 已完成；tag `v0.1.0` 已指向 `main@9e2d9d2`，尚未创建 GitHub Release；M6 规划中，见 [§5](#5-里程碑与验收)
 
 ## 1. 一句话故事
 

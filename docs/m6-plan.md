@@ -10,7 +10,7 @@ M1 的 RRF 权重在原集上选定；M2 的可回答题受证据门筛选；M4 
 
 - 复用 `eval/agent.py`、`eval/answer.py` 的引用检查与报告约定、`graph.runner.run_turn` 的预算/阶段/callback 接口，以及 M3 的 `RequestUsage` 核算；新增评测编排，不复制生产 Agent。
 - 在既有 24 篇冻结语料上新增查询级挑战集；用默认纠错图（rewrite budget=2）与同图关闭改写（budget=0）做成对消融。两路保留 plan/grade/verify，用相同索引、检索配置、模型与独立会话；这只测 rewrite 的边际贡献，不代表“Agent 胜过所有普通 RAG”。
-- 默认离线运行真实检索和图，Fake 仅替代外部模型；显式 live 模式走 Settings/OpenAI 兼容协议。保留逐题失败轨迹、时延、用量和实验指纹，补一个成功/过度弃答/不安全回答或故障的终端演示。
+- 默认离线运行真实检索和图，Fake 仅替代外部模型；显式 live 模式走 Settings/OpenAI 兼容协议。保留逐题失败轨迹、时延、用量和实验指纹，补 ≥3 条终端演示：成功、错误弃答各 ≥1 条，另从故障或不安全回答中至少选一类展示 ≥1 条。
 - 不做：修改证据门、prompt、默认 RRF/改写策略来追分；新检索器/reranker、多 Agent、前端、实时 SSE、多 worker、APM 或评测平台。后续修复单开 Issue；本里程碑只建立可信实验闭环。
 
 ## 亮点与为什么不是玩具：验收清单
@@ -26,6 +26,7 @@ M1 的 RRF 权重在原集上选定；M2 的可回答题受证据门筛选；M4 
 
 - [ ] 每题运行 budget=2/0 两路，独立 thread/checkpoint，验证除预算与运行标识外配置一致、无跨题历史。输出逐题决策、最终回答/引用、本轮检索及每次 attempt 的 IDs、改写次数、终止原因。
 - [ ] 固定口径：`answerable_coverage` = 可回答题中“最终作答且包含全部 gold 引用并通过确定性引用校验”的比例；`unsafe_answer_rate` = 不可回答题中最终作答的比例；`correct_abstain_rate` = 不可回答题中证据不足/预算耗尽导致弃答的比例。provider 错误、超时、协议错误单列 operational failure，仍留在原分母，不算正确弃答；语义指标不能用 citation ID 真实性替代。
+- [ ] 引用完整率按题计：分母为全部预期可回答题（包括最终弃答和 operational failure，二者均计 0）；分子为其中最终作答、覆盖全部 gold 引用且通过确定性引用校验的题数。不可回答题不进入该分母，其引用仍须校验并计入全量编造引用数。额外引用不增加分子或分母：来自本轮检索且通过校验的额外引用不扣分；伪造、跨题或未检出的引用使该题不得进入分子，并按引用校验口径计错。因此全部弃答时引用完整率为 0，不能靠排除弃答抬高指标。
 - [ ] 两路分别报告总体/类别 n、分子分母、上述三率、引用完整率、故障率、原因分布。主质量目标预注册为 coverage ≥0.80、unsafe ≤0.10、correct abstain ≥0.90、引用完整率 =1.00、编造引用数 =0；均为本集目标，不是生产 SLO。
 - [ ] 报告两路 coverage/unsafe 的成对差值、覆盖成功的 gained/lost/tied 题 ID；按 query 成对 bootstrap（2,000 次、seed=2026）给差值 95% 区间，单路比例附 Wilson 95% 区间。小样本区间不能证明跨域收益；无增益或退步照实保留，不要求“纠错必胜”。
 - [ ] `--gate quality` 只按绝对质量阈值判断，不能因基准也差而放行；`--gate regression` 验证冻结离线基准的逐题决策、引用和失败分类，无新增不安全回答/编造引用，报告自身质量 PASS/FAIL。故意降低覆盖、增加不安全回答、全部弃答和全部 provider 故障均有反例测试；全部弃答不能通过 quality。
@@ -34,7 +35,7 @@ M1 的 RRF 权重在原集上选定；M2 的可回答题受证据门筛选；M4 
 
 - [ ] 每条以 `run_id + case_id + variant + trace_id` 关联 JSON 报告与 JSONL 阶段日志；记录 stage 顺序/时延、usage source、token/成本与最慢阶段。复用现有 callback/on_stage；阶段成本之和与已完成对话调用核算一致，非零 Fake usage/价格替身验证对账。
 - [ ] 用互斥、固定优先级分类：operational failure → 引用校验失败 → 证据未全检出 → 已检出仍弃答 → 已答但 gold 未全覆盖 → 不可回答题错误作答 → 成功；明确证据“检出”按本轮所有 attempts 的并集，部分可回答负例不套正例检索漏失规则。不足以断言根因时称观测分类，不把它包装成因果解释；保留原始 reason/attempts 供复核。
-- [ ] 每个 variant 输出整轮 p50/p95（含图/检查点，不含建索引和启动）、已完成对话调用 token/USD、额外改写开销；embedding 与失败调用未知账单沿用 M3 排除口径。Fake 成本为 0 且时延不代表真实 provider SLO。
+- [ ] 每个 variant 输出整轮 p50/p95（含图/检查点，不含建索引和启动）、已完成对话调用 token/USD、额外改写开销；embedding 与失败调用未知账单沿用 M3 排除口径。M6 待实现的核算合同：`--mode offline` 下，即使本机配置了 API key 和非零单价，`RequestUsage.snapshot()` 也必须按 offline 核算，`cost_usd` 为零；保留 Fake token/usage source，报告模式标记为 offline。实现时须显式传递 offline 状态，或用清空密钥的离线 Settings 构造核算对象，不能仅依赖本机是否有密钥推断。新增密钥存在、单价非零且 Fake token 非零的测试，断言 snapshot 与阶段/总成本均为零。Fake 时延不代表真实 provider SLO。
 - [ ] manifest 包含 git SHA、Python/依赖锁指纹、语料/数据/配置/prompt/rubric 指纹、模式、生成/embedding/judge 身份（未使用 judge 则明示）。两次离线运行除时间、随机 ID、时延等观测字段外，决策/引用/分类/指标一致；不要求真实模型逐字确定。
 - [ ] Fake/MockTransport 覆盖 provider 500/超时、畸形输出、伪造/跨题引用、部分证据缺失、无检索结果、预算耗尽；故障保留逐题记录与已完成调用用量，不把异常原文、密钥、未验证草稿写入最终回答/公共 artifacts。损坏数据/不兼容基准/缺失回放 fixture 退出 2；已完成但门禁未过退出 1；通过退出 0。部分失败的报告明确 incomplete，不能成功退出。
 
@@ -58,7 +59,7 @@ uv run ruff format --check .
 
 - [ ] `offline` 为默认模式，忽略本机密钥和外部 provider；socket 拦截测试保证不出网。CI 在 Windows/Linux 跑新测试与 regression 命令，保留完整报告/manifest/阶段日志 artifacts；时延不作跨机器门禁。原 M1–M5 门禁继续全绿。
 - [ ] 入库首次离线基准及生成来源；不自动刷新 baseline/阈值/数据以修复红灯。若首轮 challenge quality 未达标，M6 可交付评测能力，但必须发布 FAIL 与逐项后续修复 Issue，README 不得宣称质量已过关；CI 的 regression PASS 与 quality FAIL 并列可见。
-- [ ] README 给两路指标、区间、故障率、成本边界和 ≥3 条 case 的定位命令/终端记录（成功、错误弃答、故障或不安全回答）；必要时用明确标注的注入故障展示，不能冒充自然观测。更新 ADR，解释原集选择偏差、消融边界和首轮负向结果。
+- [ ] README 给两路指标、区间、故障率、成本边界和 ≥3 条不同 case 的定位命令/终端记录：成功、错误弃答各 ≥1 条，另从故障或不安全回答中至少选一类展示 ≥1 条。故障与不安全回答是两个独立类别；最低覆盖三类，不要求四类全覆盖。必要时用明确标注的注入故障展示，不能冒充自然观测。更新 ADR，解释原集选择偏差、消融边界和首轮负向结果。
 
 ### 5. 真实模型证据边界
 
