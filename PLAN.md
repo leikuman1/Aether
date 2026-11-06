@@ -5,7 +5,7 @@
 
 - 仓库：<https://github.com/leikuman1/Aether>
 - 技术栈：Python 3.12 / uv / FastAPI / LangGraph / rank-bm25 + sqlite-vec
-- 状态：M0 骨架已落地，里程碑见 [§5](#5-里程碑与验收)
+- 状态：M0–M5 已完成；tag `v0.1.0` 已指向 `main@9e2d9d2`，尚未创建 GitHub Release；M6 规划中，见 [§5](#5-里程碑与验收)
 
 ## 1. 一句话故事
 
@@ -64,16 +64,49 @@ LLM 走 OpenAI 兼容协议（默认智谱 GLM，环境变量可切 OpenAI / Dee
 
 ## 5. 里程碑与验收
 
-对应 GitHub Issues（标题前缀 [M1]–[M5]），验收标准以 Issue 内清单为准。
+对应 GitHub Issues（标题前缀 [M1]–[M6]）；M0–M5 已完成，M6 的实施清单见下方链接。
 
 | 里程碑 | 内容 | 硬验收 |
 |---|---|---|
-| M0（本次） | 骨架：uv 项目、FastAPI /healthz、测试、ruff、CI | CI 绿；`uv run pytest` 无网络可跑 |
+| M0 | 骨架：uv 项目、FastAPI /healthz、测试、ruff、CI | CI 绿；`uv run pytest` 无网络可跑 |
 | M1 | 摄取 + 混合检索 + 检索评测 | 标注集 ≥50 query；hybrid recall@5 ≥ 任一单路；指标表可复现 |
 | M2 | 纠错 Agent 图 + 弃答语义 | 对抗集 ≥20 弃答率 ≥80%；预算耗尽有测试；会话可恢复 |
 | M3 | 服务层：SSE + 会话 + 成本核算 | 20 并发冒烟；跨进程续聊；成本头与 /metrics 对账 |
 | M4 | 评测体系 + CI 质量门禁 | 答案黄金集 ≥30；引用真实性 =100%；CI 阈值阻断 |
 | M5 | 观测 + 压测 + 发布 v0.1.0 | 单请求定位最慢阶段；压测 p50/p95 入 README |
+| M6（规划） | 独立挑战集与可归因失败评测 | 新查询 ≥60；rewrite 2/0 成对消融；质量/回归分开判定；逐题失败可复现 |
+
+### M6：独立挑战集与可归因失败评测
+
+实施 Issue：[#11](https://github.com/leikuman1/Aether/issues/11)。完整范围、命令、指标定义与风险见 [M6 验收协议](docs/m6-plan.md)。
+M4 按 Fake 可回答性选择的 42 题仍作为回归集；M6 先冻结新题与阈值再跑，
+补足“评测自身是否可信、纠错何时有用、失败在哪一层”的简历证据。
+
+**范围**：复用现有检索、图、引用门和观测回调，比较默认图（rewrite budget=2）与同图
+关闭改写（budget=0）。不改生产策略追分，不加 UI、新检索器、多 Agent 或实时 SSE。
+
+**亮点与为什么不是玩具（M6 验收）**：
+
+- [ ] **数字**：新查询 ≥60（可回答 ≥40、近似/部分证据但不可完整回答 ≥20），先标注冻结、与原题去重；
+  两路报告总体/分组分母、完整证据作答覆盖率、不安全回答率、正确弃答率及 95% 区间。
+  预注册质量目标分别为 ≥0.80、≤0.10、≥0.90，引用完整率 =100%、编造引用 =0；
+  保留负向消融，不以“必须有增益”挑题。
+- [ ] **失败路径**：全部弃答不能过质量门，provider 故障不算正确弃答；伪造/跨题引用、
+  部分证据、预算耗尽、500/超时和协议错误都有 Fake/MockTransport 反例测试与退出码断言。
+- [ ] **观测与复现**：逐题关联 run/case/variant/trace、attempts、失败分类、阶段时延和用量；
+  冻结数据/配置/模型指纹；两次离线结果一致；Windows/Linux CI 回归门与 artifacts，≥3 条终端定位演示。
+- [ ] **诚实边界**：quality 与 regression 分开显示；首轮质量失败要发布失败记录并链接后续修复 Issue，
+  不刷新基准掩盖。live 显式启用；无实测标记 `not_run`，Fake 不充当真实语义质量结论。
+
+验收命令（M6 待实现）：
+
+```bash
+uv run aether-eval challenge --mode offline --gate regression --baseline data/golden/challenge_baseline.json --output data/eval/challenge.json
+```
+
+另以 `--gate quality` 独立检查质量。新测试、全量 pytest/ruff、live 命令与退出码合同见完整协议。
+残余风险：同语料/作者偏差、小样本宽区间、严格抽取式证据门导致过度弃答、真实 provider 非确定性；
+M6 测量这些边界，不能据此宣称跨域泛化或 Agent 普遍优于单次 RAG。
 
 ## 6. 风险与对策
 
